@@ -45,6 +45,13 @@ class Options:
     alerts: bool = True             # GitHub "> [!NOTE]" call-outs
     quote_panels: bool = False      # "> **Note:** ..." becomes a panel
     images: bool = True             # draw local images, or show the alt text
+    front_matter: bool = True       # --- YAML / +++ TOML header block
+    callout_titles: bool = False    # "> [!note] A title" keeps the title
+    wikilinks: bool = False         # [[Note]], [[Note|alias]], ![[embed]]
+    hashtags: bool = False          # #tag in running text
+    comments: bool = False          # %% hidden from the reader %%
+    template_tags: bool = False     # {{ liquid }}, {%- -%}, {{< shortcode >}}
+    smart_typography: bool = False  # curly quotes, en/em dashes, ellipsis
 
 
 DEFAULT = Options()
@@ -58,6 +65,7 @@ class Feature:
     flag: str    # the CLI flag stem: --flag / --no-flag
     label: str   # what the dialog calls it
     hint: str    # what turning it off does
+    group: str = "Structure"
 
 
 FEATURES = (
@@ -65,23 +73,44 @@ FEATURES = (
             "Pipe tables become tables; off leaves the rows as plain text."),
     Feature("task_lists", "task-lists", "Task lists",
             "\"- [x] item\" gets a check box; off leaves the brackets."),
-    Feature("strikethrough", "strikethrough", "Strikethrough",
-            "~~text~~ is struck through; off leaves the tildes."),
-    Feature("bare_autolinks", "autolinks", "Bare URLs",
-            "https://... in ordinary text becomes a link."),
-    Feature("hard_breaks", "hard-breaks", "Hard line breaks",
-            "A single newline ends the line instead of flowing on."),
-    Feature("mark", "highlight", "Highlight",
-            "==text== is highlighted; off leaves the equals signs."),
-    Feature("containers", "containers", "Containers",
-            "\"::: note\" blocks become call-outs."),
-    Feature("alerts", "alerts", "Alerts",
-            "\"> [!NOTE]\" quotes become call-outs."),
-    Feature("quote_panels", "panels", "Labelled panels",
-            "\"> **Note:** ...\" quotes become call-outs."),
     Feature("images", "images", "Images",
             "Local PNG/GIF images are drawn; off shows the alt text."),
+    Feature("front_matter", "front-matter", "Front matter",
+            "A leading --- or +++ header is metadata, not a rule and a "
+            "heading."),
+    Feature("hard_breaks", "hard-breaks", "Hard line breaks",
+            "A single newline ends the line instead of flowing on."),
+
+    Feature("strikethrough", "strikethrough", "Strikethrough",
+            "~~text~~ is struck through; off leaves the tildes.", "Inline"),
+    Feature("bare_autolinks", "autolinks", "Bare URLs",
+            "https://... in ordinary text becomes a link.", "Inline"),
+    Feature("mark", "highlight", "Highlight",
+            "==text== is highlighted; off leaves the equals signs.", "Inline"),
+    Feature("smart_typography", "smart-typography", "Smart typography",
+            "Straight quotes curl, -- becomes a dash, ... an ellipsis.",
+            "Inline"),
+    Feature("wikilinks", "wikilinks", "Wiki links",
+            "[[Note]] and ![[embed]] link to another note.", "Inline"),
+    Feature("hashtags", "hashtags", "Hashtags",
+            "#tag in running text renders as a tag.", "Inline"),
+    Feature("template_tags", "template-tags", "Template tags",
+            "{{ liquid }} and {{< shortcodes >}} show as template markers.",
+            "Inline"),
+    Feature("comments", "comments", "Hidden comments",
+            "%% text %% is hidden from the reader.", "Inline"),
+
+    Feature("containers", "containers", "Containers",
+            "\"::: note\" blocks become call-outs.", "Call-outs"),
+    Feature("alerts", "alerts", "Alerts",
+            "\"> [!NOTE]\" quotes become call-outs.", "Call-outs"),
+    Feature("callout_titles", "callout-titles", "Call-out titles",
+            "\"> [!note] A title\" keeps its title line.", "Call-outs"),
+    Feature("quote_panels", "panels", "Labelled panels",
+            "\"> **Note:** ...\" quotes become call-outs.", "Call-outs"),
 )
+
+GROUPS = ("Structure", "Inline", "Call-outs")
 
 FEATURE_KEYS = tuple(f.key for f in FEATURES)
 FEATURES_BY_KEY = {f.key: f for f in FEATURES}
@@ -106,6 +135,11 @@ _PANEL_ALIASES = {
     "hint": "tip", "success": "success", "check": "success", "warning":
     "warning", "caution": "warning", "danger": "danger", "error": "danger",
     "important": "info", "question": "info", "example": "note",
+    # Obsidian's callout vocabulary
+    "abstract": "note", "summary": "note", "tldr": "note", "todo": "info",
+    "faq": "info", "help": "info", "done": "success", "bug": "danger",
+    "failure": "danger", "fail": "danger", "missing": "danger",
+    "quote": "note", "cite": "note", "attention": "warning",
 }
 
 
@@ -174,6 +208,15 @@ class ThematicBreak:
 
 
 @dataclass
+class FrontMatter:
+    """The metadata header Obsidian, Jekyll and Hugo files start with."""
+
+    fmt: str = "yaml"                                   # "yaml" | "toml"
+    pairs: List[tuple] = field(default_factory=list)    # [(key, value), ...]
+    raw: str = ""
+
+
+@dataclass
 class Table:
     header: List[List[object]] = field(default_factory=list)
     aligns: List[str] = field(default_factory=list)  # "left" | "center" | "right"
@@ -228,6 +271,31 @@ class Image:
 
 
 @dataclass
+class WikiLink:
+    """``[[Note]]``, ``[[Note|alias]]`` or an ``![[embed]]``."""
+
+    target: str = ""
+    alias: str = ""
+    embed: bool = False
+
+    @property
+    def display(self) -> str:
+        return self.alias or self.target
+
+
+@dataclass
+class Tag:
+    name: str = ""
+
+
+@dataclass
+class Template:
+    """A Liquid tag or a Hugo shortcode, shown as a marker rather than run."""
+
+    text: str = ""
+
+
+@dataclass
 class SoftBreak:
     pass
 
@@ -254,7 +322,7 @@ _TABLE_DELIM_RE = re.compile(
 )
 _TASK_RE = re.compile(r"^\[([ xX])\][ \t]+")
 _CONTAINER_RE = re.compile(r"^ {0,3}(:{3,})[ \t]*(\w+)?[ \t]*(.*?)[ \t]*$")
-_GH_ALERT_RE = re.compile(r"^\[!(\w+)\][ \t]*$")
+_GH_ALERT_RE = re.compile(r"^\[!(\w+)\]([+-]?)[ \t]*(.*)$")
 _QUOTE_LABEL_RE = re.compile(
     r"^[\s*_]*(note|info|information|tip|hint|success|check|warning|caution|"
     r"danger|error|important|question|example)\s*:[\s*_]*",
@@ -265,7 +333,47 @@ _QUOTE_LABEL_RE = re.compile(
 def parse(source: str, opts: Options = DEFAULT) -> Document:
     """Parse Markdown *source* into a :class:`Document`."""
     text = source.replace("\r\n", "\n").replace("\r", "\n").expandtabs(4)
-    return Document(children=_parse_blocks(text.split("\n"), opts))
+    lines = text.split("\n")
+    blocks: List[object] = []
+    if opts.front_matter:
+        header, lines = _parse_front_matter(lines)
+        if header is not None:
+            blocks.append(header)
+    blocks.extend(_parse_blocks(lines, opts))
+    return Document(children=blocks)
+
+
+def _parse_front_matter(lines: List[str]):
+    """Peel a leading ``---`` (YAML) or ``+++`` (TOML) header off the file."""
+    if not lines or lines[0].strip() not in ("---", "+++"):
+        return None, lines
+    fence = lines[0].strip()
+    fmt = "toml" if fence == "+++" else "yaml"
+    for k in range(1, len(lines)):
+        if lines[k].strip() == fence:
+            body = lines[1:k]
+            return _front_matter_node(fmt, body), lines[k + 1:]
+    return None, lines  # never closed: it was a thematic break after all
+
+
+def _front_matter_node(fmt: str, body: List[str]) -> FrontMatter:
+    sep = "=" if fmt == "toml" else ":"
+    pairs = []
+    for line in body:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line[:1].isspace() or stripped.startswith("- "):
+            if pairs:  # a nested value belongs to the key above it
+                key, value = pairs[-1]
+                pairs[-1] = (key, f"{value} {stripped}".strip())
+            continue
+        key, found, value = stripped.partition(sep)
+        if found:
+            pairs.append((key.strip(), value.strip().strip("\"'")))
+        else:
+            pairs.append(("", stripped))
+    return FrontMatter(fmt=fmt, pairs=pairs, raw="\n".join(body))
 
 
 def _indent_of(line: str) -> int:
@@ -460,17 +568,23 @@ def _quote_panel(children: List[object], opts: Options) -> Optional[Panel]:
     if not inlines:
         return None
 
-    # GitHub alerts:  > [!NOTE]
+    # Alerts and callouts:  > [!NOTE]   /   > [!note]- With a title
     if opts.alerts and isinstance(inlines[0], Text):
-        m = _GH_ALERT_RE.match(inlines[0].text.strip())
+        brk = next((k for k, node in enumerate(inlines)
+                    if isinstance(node, (SoftBreak, HardBreak))), None)
+        head = inlines if brk is None else inlines[:brk]
+        rest = [] if brk is None else inlines[brk + 1:]
+        m = _GH_ALERT_RE.match(_plain(head).strip())
         if m:
             kind = panel_kind(m.group(1))
-            if kind:
-                rest = inlines[1:]
-                while rest and isinstance(rest[0], (SoftBreak, HardBreak)):
-                    rest = rest[1:]
+            title = m.group(3).strip()
+            # GitHub wants the marker alone on its line; Obsidian allows a
+            # title and a fold marker after it.
+            if kind and (opts.callout_titles or not (title or m.group(2))):
                 body = ([Paragraph(children=rest)] if rest else []) + children[1:]
-                return Panel(kind=kind, title="", children=body)
+                return Panel(kind=kind,
+                             title=title if opts.callout_titles else "",
+                             children=body)
 
     if not opts.quote_panels:
         return None
@@ -680,6 +794,31 @@ _COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 _ENTITY_RE = re.compile(r"&(?:#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});")
 _BARE_URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\[\]`]+", re.I)
 _TRAILING_PUNCT = "?!.,:;*_~'\""
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]*))?\]\]")
+_HASHTAG_RE = re.compile(r"#([A-Za-z0-9_][\w/-]*)")
+_COMMENT_MD_RE = re.compile(r"%%.*?%%", re.S)
+_TEMPLATE_RE = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.S)
+_SMART_DASH_RE = re.compile(r"(?<!-)---(?!-)")
+_SMART_NDASH_RE = re.compile(r"(?<!-)--(?!-)")
+_OPENING_BEFORE = " \t\n([{<-–—“‘/"
+
+
+def smarten(text: str) -> str:
+    """Curly quotes, en/em dashes and ellipses, the way a typographer wants."""
+    text = text.replace("...", "…")
+    text = _SMART_DASH_RE.sub("—", text)
+    text = _SMART_NDASH_RE.sub("–", text)
+    out = []
+    prev = " "
+    for ch in text:
+        if ch == '"':
+            out.append("“" if prev in _OPENING_BEFORE else "”")
+        elif ch == "'":
+            out.append("‘" if prev in _OPENING_BEFORE else "’")
+        else:
+            out.append(ch)
+        prev = ch
+    return "".join(out)
 
 
 def parse_inlines(text: str, opts: Options = DEFAULT,
@@ -690,11 +829,51 @@ def parse_inlines(text: str, opts: Options = DEFAULT,
 
     def flush():
         if buf:
-            nodes.append(Text("".join(buf)))
+            body = "".join(buf)
+            nodes.append(Text(smarten(body) if opts.smart_typography else body))
             buf.clear()
 
     while i < n:
         c = text[i]
+
+        # Hidden comments and template tags: shown as markers, never run
+        if c == "%" and opts.comments and text.startswith("%%", i):
+            m = _COMMENT_MD_RE.match(text, i)
+            if m:
+                flush()
+                i = m.end()
+                continue
+        if c == "{" and opts.template_tags:
+            m = _TEMPLATE_RE.match(text, i)
+            if m:
+                flush()
+                nodes.append(Template(m.group(0)))
+                i = m.end()
+                continue
+
+        # Wiki links and embeds
+        if opts.wikilinks and (c == "[" or c == "!"):
+            start = i + 1 if c == "!" else i
+            if text.startswith("[[", start):
+                m = _WIKILINK_RE.match(text, start)
+                if m:
+                    flush()
+                    nodes.append(WikiLink(target=m.group(1).strip(),
+                                          alias=(m.group(2) or "").strip(),
+                                          embed=c == "!"))
+                    i = m.end()
+                    continue
+
+        # Hashtags, but not "#" glued to a word or a bare number
+        if c == "#" and opts.hashtags and not in_link and \
+                (i == 0 or text[i - 1] in " \t\n([{-—" or text[i - 1] in _PUNCT
+                 and text[i - 1] not in "#\\"):
+            m = _HASHTAG_RE.match(text, i)
+            if m and not m.group(1).isdigit():
+                flush()
+                nodes.append(Tag(m.group(1)))
+                i = m.end()
+                continue
 
         # Backslash escapes and backslash hard breaks
         if c == "\\" and i + 1 < n:
@@ -1016,10 +1195,14 @@ def _plain(nodes: List[object]) -> str:
     """Flatten inline nodes to their plain-text content."""
     out: List[str] = []
     for node in nodes:
-        if isinstance(node, (Text, Code)):
+        if isinstance(node, (Text, Code, Template)):
             out.append(node.text)
         elif isinstance(node, Image):
             out.append(node.alt)
+        elif isinstance(node, WikiLink):
+            out.append(node.display)
+        elif isinstance(node, Tag):
+            out.append("#" + node.name)
         elif isinstance(node, (SoftBreak, HardBreak)):
             out.append(" ")
         elif hasattr(node, "children"):

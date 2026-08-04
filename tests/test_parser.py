@@ -458,6 +458,135 @@ class TestCli(unittest.TestCase):
         self.assertIn("Hidden", without)             # plain heading again
 
 
+class TestFrontMatter(unittest.TestCase):
+    def test_yaml(self):
+        doc = P.parse("---\ntitle: My Note\ndraft: true\n---\n\n# Body\n")
+        header = doc.children[0]
+        self.assertIsInstance(header, P.FrontMatter)
+        self.assertEqual(header.fmt, "yaml")
+        self.assertEqual(header.pairs, [("title", "My Note"), ("draft", "true")])
+        self.assertIsInstance(doc.children[1], P.Heading)
+
+    def test_toml(self):
+        header = P.parse('+++\ntitle = "Post"\n+++\n\nBody\n').children[0]
+        self.assertEqual(header.fmt, "toml")
+        self.assertEqual(header.pairs, [("title", "Post")])
+
+    def test_nested_values_fold_into_their_key(self):
+        header = P.parse("---\ntags:\n  - one\n  - two\n---\n").children[0]
+        self.assertEqual(header.pairs, [("tags", "- one - two")])
+
+    def test_only_at_the_top_of_the_file(self):
+        doc = P.parse("# Title\n\n---\nnot: metadata\n---\n")
+        self.assertNotIsInstance(doc.children[0], P.FrontMatter)
+        self.assertNotIn(P.FrontMatter, [type(b) for b in doc.children])
+
+    def test_unclosed_is_a_thematic_break(self):
+        doc = P.parse("---\n\nBody\n")
+        self.assertIsInstance(doc.children[0], P.ThematicBreak)
+
+    def test_switch_off_restores_old_behaviour(self):
+        doc = P.parse("---\ntitle: x\n---\n", P.Options(front_matter=False))
+        self.assertIsInstance(doc.children[0], P.ThematicBreak)
+
+    def test_hidden_for_site_generators(self):
+        from mdedit import flavors
+
+        src = "---\ntitle: x\n---\n\nBody\n"
+        for key, shown in (("obsidian", True), ("jekyll", False),
+                           ("hugo", False), ("github", True)):
+            fl = flavors.FLAVORS[key]
+            out = html_export.to_html(P.parse(src, fl.opts), standalone=False,
+                                      flavor=fl, opts=fl.opts)
+            self.assertEqual(shown, "frontmatter" in out, key)
+            self.assertIn("Body", out)
+
+
+class TestVaultAndSiteSyntax(unittest.TestCase):
+    OBS = P.Options(wikilinks=True, hashtags=True, comments=True,
+                    callout_titles=True)
+
+    def test_wikilink(self):
+        doc = P.parse("See [[Other Note]].", self.OBS)
+        link = doc.children[0].children[1]
+        self.assertIsInstance(link, P.WikiLink)
+        self.assertEqual(link.target, "Other Note")
+        self.assertEqual(link.display, "Other Note")
+
+    def test_wikilink_alias_and_embed(self):
+        doc = P.parse("[[Deep/Note|alias]] ![[pic.png]]", self.OBS)
+        alias, embed = [n for n in doc.children[0].children
+                        if isinstance(n, P.WikiLink)]
+        self.assertEqual((alias.target, alias.display), ("Deep/Note", "alias"))
+        self.assertTrue(embed.embed)
+
+    def test_wikilink_becomes_a_local_md_link_in_html(self):
+        out = html_export.to_html(P.parse("[[Other Note]]", self.OBS),
+                                  standalone=False, opts=self.OBS)
+        self.assertIn('href="Other Note.md"', out)
+        self.assertIn("wikilink", out)
+
+    def test_wikilinks_off_stay_literal(self):
+        self.assertIn("[[Other Note]]", html("[[Other Note]]"))
+
+    def test_hashtag(self):
+        doc = P.parse("Tagged #project/alpha here.", self.OBS)
+        tag = doc.children[0].children[1]
+        self.assertIsInstance(tag, P.Tag)
+        self.assertEqual(tag.name, "project/alpha")
+
+    def test_hashtag_needs_a_boundary_and_a_letter(self):
+        for src in ("c#sharp is fine", "issue #123 stays text"):
+            doc = P.parse(src, self.OBS)
+            kinds = [type(n) for n in doc.children[0].children]
+            self.assertNotIn(P.Tag, kinds, src)
+
+    def test_comments_are_hidden(self):
+        out = html_export.to_html(P.parse("Shown %% hidden %% shown.", self.OBS),
+                                  standalone=False, opts=self.OBS)
+        self.assertNotIn("hidden", out)
+        self.assertIn("Shown", out)
+
+    def test_callout_with_title(self):
+        panel = P.parse("> [!tip]- Fold me\n> body\n", self.OBS).children[0]
+        self.assertIsInstance(panel, P.Panel)
+        self.assertEqual((panel.kind, panel.title), ("tip", "Fold me"))
+        self.assertEqual(P.plain_text(panel.children[0].children), "body")
+
+    def test_github_rejects_a_title_on_the_alert_line(self):
+        from mdedit import flavors
+
+        doc = P.parse("> [!NOTE] a title\n> body\n", flavors.GITHUB.opts)
+        self.assertIsInstance(doc.children[0], P.BlockQuote)
+
+    def test_liquid_and_shortcodes(self):
+        opts = P.Options(template_tags=True)
+        src = "{{ page.title }} {% include a.html %} {{< figure src=\"b\" >}}"
+        nodes = P.parse(src, opts).children[0].children
+        marks = [n.text for n in nodes if isinstance(n, P.Template)]
+        self.assertEqual(len(marks), 3)
+        out = html_export.to_html(P.parse(src, opts), standalone=False, opts=opts)
+        self.assertIn('class="template"', out)
+        self.assertIn("&lt;", out)  # escaped, never executed
+
+    def test_template_tags_off_stay_literal(self):
+        self.assertIn("{{ page.title }}", html("{{ page.title }}"))
+
+    def test_smart_typography(self):
+        opts = P.Options(smart_typography=True)
+        out = html_export.to_html(
+            P.parse("\"Quote\" it's 5--10... yes --- really", opts),
+            standalone=False)
+        for want in ("“Quote”", "’", "5–10", "…",
+                     "yes — really"):
+            self.assertIn(want, out)
+
+    def test_smart_typography_leaves_code_alone(self):
+        opts = P.Options(smart_typography=True)
+        out = html_export.to_html(P.parse('`a "b" -- c`', opts), standalone=False)
+        self.assertIn('a &quot;b&quot; -- c', out)
+
+
 class TestFlavors(unittest.TestCase):
     def test_every_flavor_renders(self):
         from mdedit import flavors, samples
@@ -502,7 +631,8 @@ class TestFlavors(unittest.TestCase):
 
         required = ("body_fonts", "mono_fonts", "headings", "heading_rules",
                     "quote_style", "table_style", "code_style",
-                    "link_underline", "panel_labels", "pad_x", "para_gap")
+                    "link_underline", "panel_labels", "pad_x", "para_gap",
+                    "show_front_matter", "quote_italic")
         for key in flavors.ORDER:
             metrics = flavors.FLAVORS[key].metrics
             for name in required:
@@ -513,11 +643,23 @@ class TestFlavors(unittest.TestCase):
 
         for key in flavors.ORDER:
             fl = flavors.FLAVORS[key]
+            if not fl.opts.alerts:
+                continue  # this mode has no call-out syntax to label
             src = "> [!NOTE]\n> x\n"
             out = html_export.to_html(P.parse(src, fl.opts),
                                       standalone=False, flavor=fl)
             self.assertEqual(fl.metric("panel_labels"),
                              "panel-title" in out, key)
+
+    def test_modes_without_alerts_keep_the_quote(self):
+        from mdedit import flavors
+
+        for key in flavors.ORDER:
+            fl = flavors.FLAVORS[key]
+            if fl.opts.alerts:
+                continue
+            doc = P.parse("> [!NOTE]\n> x\n", fl.opts)
+            self.assertIsInstance(doc.children[0], P.BlockQuote, key)
 
     def test_panel_html(self):
         from mdedit import flavors

@@ -98,6 +98,11 @@ Delete all of this and start writing.
 """
 
 EMULATION = """\
+---
+title: Emulation modes
+tags: [demo, markdown]
+---
+
 # Emulation modes
 
 The same source, shown the way a given platform would show it. Switch with
@@ -105,22 +110,44 @@ the **Emulate** menu or `Ctrl+E`; the mode changes three things at once: the
 **dialect** that is parsed, the **styling** of the preview, and the **CSS**
 used by *File > Export HTML*.
 
-| Feature                    | mdedit | GitHub | Confluence | Visual Studio |
-|:---------------------------|:------:|:------:|:----------:|:-------------:|
-| Pipe tables                |   on   |   on   |     on     |      on       |
-| Task lists                 |   on   |   on   |     on     |      on       |
-| `~~strikethrough~~`        |   on   |   on   |     on     |      on       |
-| Bare URLs linkified        |   on   |   on   |     on     |      on       |
-| Single newline breaks line |  off   |  off   |     on     |      off      |
-| `==highlight==`            |   on   |  off   |    off     |      on       |
-| `::: note` containers      |   on   |  off   |     on     |      on       |
-| `> [!NOTE]` alerts         |   on   |   on   |     on     |      on       |
-| `> **Note:**` panels       |  off   |  off   |     on     |      off      |
-| Images                     |   on   |   on   |     on     |      on       |
+That block at the top is front matter. Obsidian shows it as properties,
+GitHub renders it as a table, Jekyll and Hugo strip it from the page.
+
+| Feature                    | mdedit | GitHub | Confl. | VS  | Obsidian | Jekyll | Hugo |
+|:---------------------------|:------:|:------:|:------:|:---:|:--------:|:------:|:----:|
+| Pipe tables, task lists    |   on   |   on   |   on   | on  |    on    |   on   |  on  |
+| Bare URLs linkified        |   on   |   on   |   on   | on  |    on    |   on   |  on  |
+| Single newline breaks line |  off   |  off   |   on   | off |    on    |   on   | off  |
+| `==highlight==`            |   on   |  off   |  off   | on  |    on    |  off   | off  |
+| `::: note` containers      |   on   |  off   |   on   | on  |   off    |  off   | off  |
+| `> [!NOTE]` alerts         |   on   |   on   |   on   | on  |    on    |  off   | off  |
+| Call-out titles            |  off   |  off   |  off   | off |    on    |  off   | off  |
+| `> **Note:**` panels       |  off   |  off   |   on   | off |   off    |  off   | off  |
+| `[[Wiki links]]`, `#tags`  |  off   |  off   |  off   | off |    on    |  off   | off  |
+| Template tags              |  off   |  off   |  off   | off |   off    |   on   |  on  |
+| Smart typography           |  off   |  off   |  off   | off |   off    |   on   |  on  |
 
 Any of these can be switched off on its own: *Emulate > Rendering features...*
 (`Ctrl+R`), or `--no-tables`, `--no-images` and friends on the command line.
 A feature that is off keeps its markup as plain text.
+
+## Vault and site syntax
+
+[[Another Note]] and [[Deep/Note|an alias]] are wiki links -- live in
+Obsidian mode, literal everywhere else. So is a #tag in running text, and
+%%this comment%% which only Obsidian hides.
+
+Template markers stay markers, never run: {{ page.title }} is Liquid and
+{{< figure src="x.png" >}} is a Hugo shortcode. Jekyll and Hugo modes set
+them apart from the prose; the rest show the braces as written.
+
+Typographer modes curl "quotes", turn -- into a dash and ... into an
+ellipsis. Compare this line across Hugo and GitHub.
+
+> [!tip]- A callout with a title
+> Obsidian keeps the title after the marker and understands the fold
+> character. GitHub wants the marker alone on its line, so in GitHub mode
+> this stays an ordinary quote.
 
 ## Call-outs
 
@@ -150,12 +177,15 @@ Visual Studio modes and stays literal in the others.
 
 ## Styling
 
-| Mode          | Headings          | Quotes       | Tables         | Code      |
-|:--------------|:------------------|:-------------|:---------------|:----------|
-| mdedit        | rules under 1-2   | tinted block | header rule    | filled    |
-| GitHub        | rules under 1-2   | left bar     | zebra stripes  | filled    |
-| Confluence    | no rules, smaller | panel        | full grid      | bordered  |
-| Visual Studio | rule under 1      | left bar     | row lines only | bordered  |
+| Mode          | Headings          | Quotes        | Tables         | Code      |
+|:--------------|:------------------|:--------------|:---------------|:----------|
+| mdedit        | rules under 1-2   | tinted block  | header rule    | filled    |
+| GitHub        | rules under 1-2   | left bar      | zebra stripes  | filled    |
+| Confluence    | no rules, smaller | panel         | full grid      | bordered  |
+| Visual Studio | rule under 1      | left bar      | row lines only | bordered  |
+| Obsidian      | no rules          | left bar      | full grid      | filled    |
+| Jekyll        | no rules          | italic, bar   | zebra stripes  | filled    |
+| Hugo          | rule under 1      | pink bar      | row lines only | bordered  |
 
 Fonts, colours and spacing follow the same mode, in both the light and dark
 themes -- and so does the stylesheet embedded in exported HTML.

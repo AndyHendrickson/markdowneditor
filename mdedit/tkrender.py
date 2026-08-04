@@ -39,6 +39,8 @@ LIGHT = {
     "table_head": "#eceff2",
     "zebra": "#fafbfc",
     "mark_bg": "#fff3b0",
+    "tag_bg": "#eef1f5",
+    "tag_fg": "#0969da",
     "panels": flavors.PANELS_LIGHT,
     "gutter_bg": "#f6f8fa",
     "gutter_fg": "#9aa4ae",
@@ -65,6 +67,8 @@ DARK = {
     "table_head": "#1c222b",
     "zebra": "#11161d",
     "mark_bg": "#6b5300",
+    "tag_bg": "#1c2430",
+    "tag_fg": "#6cb0f8",
     "panels": flavors.PANELS_DARK,
     "gutter_bg": "#0d1117",
     "gutter_fg": "#5a636d",
@@ -248,9 +252,22 @@ class MarkdownRenderer:
         t.tag_configure("codelang", font=f["mono"], foreground=th["muted"])
         t.tag_configure("codeborder", font=f["mono"], background=th["block_bg"],
                         foreground=th["rule"])
+        quote_font = f["italic"] if self._metric("quote_italic") else f["body"]
         t.tag_configure("quote", background=th["quote_bg"],
-                        foreground=th["quote_fg"])
-        t.tag_configure("quoteplain", foreground=th["quote_fg"])
+                        foreground=th["quote_fg"], font=quote_font)
+        t.tag_configure("quoteplain", foreground=th["quote_fg"],
+                        font=quote_font)
+        t.tag_configure("tagpill", background=th["tag_bg"],
+                        foreground=th["tag_fg"])
+        t.tag_configure("mtagpill", font=f["mono"], background=th["tag_bg"],
+                        foreground=th["tag_fg"])
+        t.tag_configure("template", font=f["mono"], background=th["code_bg"],
+                        foreground=th["muted"])
+        t.tag_configure("mtemplate", font=f["mono"], foreground=th["muted"])
+        t.tag_configure("frontmatter", font=f["mono"], background=th["block_bg"],
+                        foreground=th["fg"])
+        t.tag_configure("fmkey", font=f["mono_bold"], background=th["block_bg"],
+                        foreground=th["muted"])
         t.tag_configure("bullet", foreground=th["muted"])
         t.tag_configure("table", font=f["mono"])
         t.tag_configure("tablehead", font=f["mono_bold"],
@@ -355,6 +372,9 @@ class MarkdownRenderer:
         elif isinstance(node, P.Panel):
             self._panel(node, indent, tags)
 
+        elif isinstance(node, P.FrontMatter):
+            self._front_matter(node, indent, tags)
+
         elif isinstance(node, P.ThematicBreak):
             self._rule()
 
@@ -415,6 +435,27 @@ class MarkdownRenderer:
         for child in node.children:
             self._block(child, inner, tuple(tags) + style)
         self._pop_margin()
+
+    def _front_matter(self, node: P.FrontMatter, indent: int, tags: tuple):
+        """The metadata header, shown the way the platform shows it."""
+        if not self._metric("show_front_matter", True) or not node.pairs:
+            return
+        pad = indent + self.px(10)
+        ind = self._margin_indent(pad)
+        base = tuple(tags) + (ind, "frontmatter")
+        keys = [k for k, _ in node.pairs if k]
+        key_width = min(max((len(k) for k in keys), default=0) + 2, 24)
+        rows = [(f" {k}".ljust(key_width) if k else "", v)
+                for k, v in node.pairs]
+        width = min(max((key_width + len(v) + 2 for _, v in rows), default=0), 160)
+
+        self._ins(" " * width + "\n", base)
+        for key, value in rows:
+            if key:
+                self._ins(key, tuple(tags) + (ind, "fmkey"))
+            self._ins(f" {value}".ljust(max(0, width - len(key))) + "\n", base)
+        self._ins(" " * width + "\n", base)
+        self._blank_line(indent, tags)
 
     def _code_block(self, node: P.CodeBlock, indent: int, tags: tuple):
         pad = indent + self.px(14)
@@ -575,6 +616,13 @@ class MarkdownRenderer:
                               tuple(styles) + ("link",), mono, heading)
             elif isinstance(node, P.Image):
                 self._image(node, tags)
+            elif isinstance(node, P.WikiLink):
+                self._wikilink(node, tags, styles, mono, heading)
+            elif isinstance(node, P.Tag):
+                self._ins(f" #{node.name} ",
+                          tags + (pfx + "tagpill",))
+            elif isinstance(node, P.Template):
+                self._ins(node.text, tags + (pfx + "template",))
             elif isinstance(node, P.HardBreak):
                 self._ins("\n", tags)
             elif isinstance(node, P.SoftBreak):
@@ -620,6 +668,21 @@ class MarkdownRenderer:
     def _click(self, href: str):
         if self.on_link:
             self.on_link(href, "click")
+
+    def _wikilink(self, node: P.WikiLink, tags: tuple, styles, mono: bool,
+                  heading: int):
+        """[[Note]] links to a file in the same folder; ![[pic]] embeds it."""
+        target = node.target.split("#")[0].split("^")[0].strip() or node.target
+        stem, ext = os.path.splitext(target)
+        if node.embed and ext.lower() in (".png", ".gif", ".pgm", ".ppm"):
+            self._image(P.Image(alt=node.display, src=target), tags)
+            return
+        href = target if ext else target + ".md"
+        tag = self._link_tag(href)
+        label = ("⧉ " if node.embed else "") + node.display
+        self._ins(label, tags + (tag,)
+                  + self._style_tags(tuple(styles) + ("link",),
+                                     "m" if mono else "", heading))
 
     def _image(self, node: P.Image, tags: tuple):
         path = node.src

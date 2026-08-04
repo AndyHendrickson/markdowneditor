@@ -277,23 +277,32 @@ class FeatureDialog(tk.Toplevel):
 
         self.vars = {}
         self.notes = {}
-        for k, feature in enumerate(P.FEATURES):
-            row = 1 + k * 2
-            var = tk.BooleanVar(value=True)
-            self.vars[feature.key] = var
-            ttk.Checkbutton(
-                frame, text=feature.label, variable=var,
-                command=lambda key=feature.key: self.on_toggle(key),
-            ).grid(row=row, column=0, sticky="w")
-            note = ttk.Label(frame, text="", style="Hint.TLabel", anchor="e")
-            note.grid(row=row, column=1, sticky="e", padx=(app.px(24), 0))
-            self.notes[feature.key] = note
-            ttk.Label(frame, text=feature.hint, style="Hint.TLabel").grid(
-                row=row + 1, column=0, columnspan=2, sticky="w",
-                padx=(app.px(22), 0), pady=(0, app.px(7)))
+        row = 1
+        for group in P.GROUPS:
+            members = [f for f in P.FEATURES if f.group == group]
+            if not members:
+                continue
+            ttk.Label(frame, text=group.upper(), style="Group.TLabel").grid(
+                row=row, column=0, columnspan=2, sticky="w",
+                pady=(app.px(10) if row > 1 else 0, app.px(4)))
+            row += 1
+            for feature in members:
+                var = tk.BooleanVar(value=True)
+                self.vars[feature.key] = var
+                ttk.Checkbutton(
+                    frame, text=feature.label, variable=var,
+                    command=lambda key=feature.key: self.on_toggle(key),
+                ).grid(row=row, column=0, sticky="w")
+                note = ttk.Label(frame, text="", style="Hint.TLabel", anchor="e")
+                note.grid(row=row, column=1, sticky="e", padx=(app.px(24), 0))
+                self.notes[feature.key] = note
+                ttk.Label(frame, text=feature.hint, style="Hint.TLabel").grid(
+                    row=row + 1, column=0, columnspan=2, sticky="w",
+                    padx=(app.px(22), 0), pady=(0, app.px(6)))
+                row += 2
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=1 + len(P.FEATURES) * 2, column=0, columnspan=2,
+        buttons.grid(row=row, column=0, columnspan=2,
                      sticky="ew", pady=(app.px(6), 0))
         buttons.columnconfigure(0, weight=1)
         self.reset_button = ttk.Button(buttons, text="Reset",
@@ -778,6 +787,10 @@ class MarkdownApp(tk.Tk):
                              foreground=theme["muted"])
         self.style.configure("Changed.TLabel", background=theme["status_bg"],
                              foreground=theme["link"])
+        self.style.configure("Group.TLabel", background=theme["status_bg"],
+                             foreground=theme["muted"],
+                             font=(body_family(), max(7, self.base_size - 2),
+                                   "bold"))
         if self.feature_dialog is not None:
             self.feature_dialog.refresh()
         self.configure(background=theme["status_bg"])
@@ -848,11 +861,18 @@ class MarkdownApp(tk.Tk):
         fl, opts = self.flavor, self.opts()
         width = max(len(f.label) for f in P.FEATURES) + 4
         lines = []
-        for feature in P.FEATURES:
-            state = "on" if getattr(opts, feature.key) else "off"
-            if getattr(opts, feature.key) != getattr(fl.opts, feature.key):
-                state += "   (changed here)"
-            lines.append(f"{feature.label.ljust(width)}{state}")
+        for group in P.GROUPS:
+            members = [f for f in P.FEATURES if f.group == group]
+            if not members:
+                continue
+            if lines:
+                lines.append("")
+            lines.append(group.upper())
+            for feature in members:
+                state = "on" if getattr(opts, feature.key) else "off"
+                if getattr(opts, feature.key) != getattr(fl.opts, feature.key):
+                    state += "   (changed here)"
+                lines.append(f"  {feature.label.ljust(width)}{state}")
         messagebox.showinfo(
             f"{fl.name} emulation",
             f"{fl.blurb}\n\n" + "\n".join(lines) + "\n\n"

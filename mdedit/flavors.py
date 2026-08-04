@@ -87,14 +87,16 @@ MDEDIT = Flavor(
         "link": "#0969da", "code_bg": "#eff1f3", "code_fg": "#8250df",
         "block_bg": "#f6f8fa", "quote_bg": "#f3f5f7", "quote_fg": "#4a5460",
         "rule": "#d8dee4", "table_head": "#eceff2", "zebra": "#fafbfc",
-        "mark_bg": "#fff3b0", "panels": PANELS_LIGHT,
+        "mark_bg": "#fff3b0", "tag_bg": "#eef1f5", "tag_fg": "#0969da",
+        "panels": PANELS_LIGHT,
     },
     dark={
         "bg": "#0d1117", "fg": "#e6edf3", "muted": "#9198a1",
         "link": "#6cb0f8", "code_bg": "#262c36", "code_fg": "#d2a8ff",
         "block_bg": "#161b22", "quote_bg": "#151b23", "quote_fg": "#b3bcc6",
         "rule": "#30363d", "table_head": "#1c222b", "zebra": "#11161d",
-        "mark_bg": "#6b5300", "panels": PANELS_DARK,
+        "mark_bg": "#6b5300", "tag_bg": "#1c2430", "tag_fg": "#6cb0f8",
+        "panels": PANELS_DARK,
     },
     metrics={
         "body_fonts": ["Segoe UI Variable Text", "Segoe UI", "Helvetica Neue",
@@ -105,7 +107,7 @@ MDEDIT = Flavor(
         "heading_rules": (1, 2),
         "quote_style": "tint", "table_style": "plain", "code_style": "filled",
         "link_underline": True, "pad_x": 22, "para_gap": 0.55,
-        "panel_labels": True,
+        "panel_labels": True, "show_front_matter": True, "quote_italic": False,
     },
     css_vars="""
 :root {
@@ -150,7 +152,8 @@ GITHUB = Flavor(
         "link": "#0969da", "code_bg": "#eff1f3", "code_fg": "#1f2328",
         "block_bg": "#f6f8fa", "quote_bg": "#ffffff", "quote_fg": "#59636e",
         "rule": "#d1d9e0", "table_head": "#f6f8fa", "zebra": "#f6f8fa",
-        "mark_bg": "#fff8c5", "panels": {
+        "mark_bg": "#fff8c5", "tag_bg": "#ddf4ff", "tag_fg": "#0969da",
+        "panels": {
             "note": ("#ffffff", "#0969da"), "info": ("#ffffff", "#0969da"),
             "tip": ("#ffffff", "#1a7f37"), "success": ("#ffffff", "#1a7f37"),
             "warning": ("#ffffff", "#9a6700"), "danger": ("#ffffff", "#cf222e"),
@@ -161,7 +164,8 @@ GITHUB = Flavor(
         "link": "#4493f8", "code_bg": "#262c36", "code_fg": "#e6edf3",
         "block_bg": "#151b23", "quote_bg": "#0d1117", "quote_fg": "#9198a1",
         "rule": "#3d444d", "table_head": "#151b23", "zebra": "#151b23",
-        "mark_bg": "#5c4200", "panels": {
+        "mark_bg": "#5c4200", "tag_bg": "#121d2f", "tag_fg": "#4493f8",
+        "panels": {
             "note": ("#0d1117", "#4493f8"), "info": ("#0d1117", "#4493f8"),
             "tip": ("#0d1117", "#3fb950"), "success": ("#0d1117", "#3fb950"),
             "warning": ("#0d1117", "#d29922"), "danger": ("#0d1117", "#f85149"),
@@ -175,7 +179,7 @@ GITHUB = Flavor(
         "heading_rules": (1, 2),
         "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
         "link_underline": False, "pad_x": 30, "para_gap": 0.6,
-        "panel_labels": True,
+        "panel_labels": True, "show_front_matter": True, "quote_italic": False,
     },
     css_vars="""
 :root {
@@ -226,7 +230,8 @@ CONFLUENCE = Flavor(
         "link": "#0052cc", "code_bg": "#f4f5f7", "code_fg": "#172b4d",
         "block_bg": "#f4f5f7", "quote_bg": "#f4f5f7", "quote_fg": "#42526e",
         "rule": "#dfe1e6", "table_head": "#f4f5f7", "zebra": "#ffffff",
-        "mark_bg": "#fffae6", "panels": {
+        "mark_bg": "#fffae6", "tag_bg": "#deebff", "tag_fg": "#0052cc",
+        "panels": {
             "note": ("#eae6ff", "#5243aa"), "info": ("#deebff", "#0052cc"),
             "tip": ("#e3fcef", "#00875a"), "success": ("#e3fcef", "#00875a"),
             "warning": ("#fffae6", "#ff8b00"), "danger": ("#ffebe6", "#de350b"),
@@ -237,7 +242,8 @@ CONFLUENCE = Flavor(
         "link": "#579dff", "code_bg": "#22272b", "code_fg": "#c7d1db",
         "block_bg": "#22272b", "quote_bg": "#22272b", "quote_fg": "#9fadbc",
         "rule": "#38414a", "table_head": "#22272b", "zebra": "#1b2638",
-        "mark_bg": "#533f04", "panels": {
+        "mark_bg": "#533f04", "tag_bg": "#1c2b41", "tag_fg": "#579dff",
+        "panels": {
             "note": ("#282249", "#8f7ee7"), "info": ("#1c2b41", "#579dff"),
             "tip": ("#1c3329", "#4bce97"), "success": ("#1c3329", "#4bce97"),
             "warning": ("#332e1b", "#e2b203"), "danger": ("#42221f", "#f87168"),
@@ -251,7 +257,7 @@ CONFLUENCE = Flavor(
         "heading_rules": (),
         "quote_style": "panel", "table_style": "grid", "code_style": "bordered",
         "link_underline": False, "pad_x": 28, "para_gap": 0.5,
-        "panel_labels": False,
+        "panel_labels": False, "show_front_matter": False, "quote_italic": False,
     },
     css_vars="""
 :root {
@@ -303,14 +309,16 @@ VISUAL_STUDIO = Flavor(
         "link": "#0066b8", "code_bg": "#f5f5f5", "code_fg": "#a31515",
         "block_bg": "#f5f5f5", "quote_bg": "#f5f5f5", "quote_fg": "#4a4a4a",
         "rule": "#cccedb", "table_head": "#f0f0f0", "zebra": "#fafafa",
-        "mark_bg": "#fff2a8", "panels": PANELS_LIGHT,
+        "mark_bg": "#fff2a8", "tag_bg": "#e7f1fb", "tag_fg": "#0066b8",
+        "panels": PANELS_LIGHT,
     },
     dark={
         "bg": "#1f1f1f", "fg": "#d4d4d4", "muted": "#9a9a9a",
         "link": "#4da6ff", "code_bg": "#252526", "code_fg": "#ce9178",
         "block_bg": "#252526", "quote_bg": "#252526", "quote_fg": "#c0c0c0",
         "rule": "#3f3f46", "table_head": "#2d2d30", "zebra": "#232323",
-        "mark_bg": "#5b4b00", "panels": PANELS_DARK,
+        "mark_bg": "#5b4b00", "tag_bg": "#1e2b38", "tag_fg": "#4da6ff",
+        "panels": PANELS_DARK,
     },
     metrics={
         "body_fonts": ["Segoe UI", "Helvetica Neue", "DejaVu Sans"],
@@ -320,7 +328,7 @@ VISUAL_STUDIO = Flavor(
         "heading_rules": (1,),
         "quote_style": "bar", "table_style": "lines", "code_style": "bordered",
         "link_underline": False, "pad_x": 20, "para_gap": 0.5,
-        "panel_labels": True,
+        "panel_labels": True, "show_front_matter": False, "quote_italic": False,
     },
     css_vars="""
 :root {
@@ -352,8 +360,231 @@ a:hover { text-decoration:underline; }
 )
 
 
+# --------------------------------------------------------------------------
+# Obsidian
+# --------------------------------------------------------------------------
+
+OBSIDIAN_PANELS_LIGHT = {
+    "note": ("#eaf2fd", "#086ddd"), "info": ("#eaf2fd", "#086ddd"),
+    "tip": ("#e4f7f4", "#00bfbc"), "success": ("#e8f8ec", "#08b94e"),
+    "warning": ("#fdf3e3", "#e9973f"), "danger": ("#fdeced", "#fb464c"),
+}
+
+OBSIDIAN_PANELS_DARK = {
+    "note": ("#12253a", "#4f9ff0"), "info": ("#12253a", "#4f9ff0"),
+    "tip": ("#0f2b2a", "#3fd0cc"), "success": ("#0f2b1b", "#44cf6e"),
+    "warning": ("#2d2415", "#e0ac4e"), "danger": ("#2f1a1c", "#fb6a6f"),
+}
+
+OBSIDIAN = Flavor(
+    key="obsidian",
+    name="Obsidian",
+    blurb="Vault Markdown: [[wiki links]], #tags, %%comments%%, "
+          "> [!note] callouts with titles, and single newlines break.",
+    opts=Options(
+        tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
+        hard_breaks=True, mark=True, containers=False, alerts=True,
+        quote_panels=False, images=True, front_matter=True,
+        callout_titles=True, wikilinks=True, hashtags=True, comments=True,
+        template_tags=False, smart_typography=False,
+    ),
+    light={
+        "bg": "#ffffff", "fg": "#222222", "muted": "#6e6e6e",
+        "link": "#705dcf", "code_bg": "#f1f0f4", "code_fg": "#6a4fc0",
+        "block_bg": "#f5f5f7", "quote_bg": "#ffffff", "quote_fg": "#4a4a4a",
+        "rule": "#e3e3e6", "table_head": "#f5f5f7", "zebra": "#fafafb",
+        "mark_bg": "#ffe58f", "tag_bg": "#e9e3fb", "tag_fg": "#6c53d1",
+        "panels": OBSIDIAN_PANELS_LIGHT,
+    },
+    dark={
+        "bg": "#1e1e1e", "fg": "#dadada", "muted": "#999999",
+        "link": "#a882ff", "code_bg": "#2a2a2a", "code_fg": "#b39ddb",
+        "block_bg": "#161616", "quote_bg": "#1e1e1e", "quote_fg": "#b9b9b9",
+        "rule": "#363636", "table_head": "#262626", "zebra": "#232323",
+        "mark_bg": "#6b5b00", "tag_bg": "#2f2a45", "tag_fg": "#b0a0ff",
+        "panels": OBSIDIAN_PANELS_DARK,
+    },
+    metrics={
+        "body_fonts": ["Inter", "Segoe UI", "Helvetica Neue", "DejaVu Sans"],
+        "mono_fonts": ["Source Code Pro", "Cascadia Mono", "Consolas"],
+        "size_delta": 0, "mono_delta": -1,
+        "headings": {1: 1.9, 2: 1.55, 3: 1.3, 4: 1.15, 5: 1.05, 6: 0.95},
+        "heading_rules": (),
+        "quote_style": "bar", "table_style": "grid", "code_style": "filled",
+        "link_underline": False, "pad_x": 26, "para_gap": 0.55,
+        "panel_labels": True, "show_front_matter": True, "quote_italic": False,
+    },
+    css_vars="""
+:root {
+  --bg:#fff; --fg:#222; --muted:#6e6e6e; --link:#705dcf;
+  --code-bg:#f1f0f4; --code-fg:#6a4fc0; --block-bg:#f5f5f7; --border:#e3e3e6;
+  --thead:#f5f5f7; --zebra:#fafafb; --quote-fg:#4a4a4a; --quote-bg:transparent;
+  --quote-bar:#d6d3e4; --mark:#ffe58f; --tag-bg:#e9e3fb; --tag-fg:#6c53d1;
+  --font-body:Inter,"Segoe UI",system-ui,sans-serif;
+  --font-mono:"Source Code Pro","Cascadia Mono",Consolas,monospace;
+  --size:16px; --width:44rem; --radius:6px;
+}
+blockquote { border-left:3px solid var(--quote-bar); }
+table { border:1px solid var(--border); }
+.panel { border-left:3px solid; }
+a { text-decoration:none; }
+a:hover { text-decoration:underline; }
+a.wikilink { color:var(--link); }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#1e1e1e; --fg:#dadada; --muted:#999; --link:#a882ff;
+    --code-bg:#2a2a2a; --code-fg:#b39ddb; --block-bg:#161616; --border:#363636;
+    --thead:#262626; --zebra:#232323; --quote-fg:#b9b9b9; --quote-bar:#3d3d3d;
+    --mark:#6b5b00; --tag-bg:#2f2a45; --tag-fg:#b0a0ff;
+  }
+}
+""",
+)
+
+
+# --------------------------------------------------------------------------
+# Jekyll (kramdown + the Minima theme)
+# --------------------------------------------------------------------------
+
+JEKYLL = Flavor(
+    key="jekyll",
+    name="Jekyll",
+    blurb="kramdown with GFM input: single newlines break the line, quotes "
+          "curl, Liquid tags show as markers. Front matter is stripped.",
+    opts=Options(
+        tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
+        hard_breaks=True, mark=False, containers=False, alerts=False,
+        quote_panels=False, images=True, front_matter=True,
+        callout_titles=False, wikilinks=False, hashtags=False, comments=False,
+        template_tags=True, smart_typography=True,
+    ),
+    light={
+        "bg": "#fdfdfd", "fg": "#111111", "muted": "#828282",
+        "link": "#2a7ae2", "code_bg": "#eeeeff", "code_fg": "#111111",
+        "block_bg": "#eeeeff", "quote_bg": "#fdfdfd", "quote_fg": "#828282",
+        "rule": "#e8e8e8", "table_head": "#f0f0f0", "zebra": "#f7f7f7",
+        "mark_bg": "#fff3a0", "tag_bg": "#eeeeff", "tag_fg": "#2a7ae2",
+        "panels": PANELS_LIGHT,
+    },
+    dark={
+        "bg": "#181818", "fg": "#bfbfbf", "muted": "#8a8a8a",
+        "link": "#4a9bf5", "code_bg": "#212127", "code_fg": "#cfcfcf",
+        "block_bg": "#212127", "quote_bg": "#181818", "quote_fg": "#8a8a8a",
+        "rule": "#333333", "table_head": "#222222", "zebra": "#1d1d1d",
+        "mark_bg": "#5a4b00", "tag_bg": "#212127", "tag_fg": "#4a9bf5",
+        "panels": PANELS_DARK,
+    },
+    metrics={
+        "body_fonts": ["Segoe UI", "Helvetica Neue", "Arial", "DejaVu Sans"],
+        "mono_fonts": ["Consolas", "Cascadia Mono", "DejaVu Sans Mono"],
+        "size_delta": 0, "mono_delta": -1,
+        "headings": {1: 2.0, 2: 1.625, 3: 1.375, 4: 1.125, 5: 1.0, 6: 0.9},
+        "heading_rules": (),
+        "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
+        "link_underline": False, "pad_x": 28, "para_gap": 0.6,
+        "panel_labels": True, "show_front_matter": False, "quote_italic": True,
+    },
+    css_vars="""
+:root {
+  --bg:#fdfdfd; --fg:#111; --muted:#828282; --link:#2a7ae2;
+  --code-bg:#eef; --code-fg:#111; --block-bg:#eef; --border:#e8e8e8;
+  --thead:#f0f0f0; --zebra:#f7f7f7; --quote-fg:#828282; --quote-bg:transparent;
+  --quote-bar:#e8e8e8; --mark:#fff3a0; --tag-bg:#eef; --tag-fg:#2a7ae2;
+  --font-body:-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+  --font-mono:Menlo,Consolas,monospace;
+  --size:16px; --width:50rem; --radius:3px;
+}
+blockquote { border-left:4px solid var(--quote-bar); font-style:italic; }
+pre { border:1px solid var(--border); }
+table tr:nth-child(2n) td { background:var(--zebra); }
+a { text-decoration:none; }
+a:hover { text-decoration:underline; color:#1756a9; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#181818; --fg:#bfbfbf; --muted:#8a8a8a; --link:#4a9bf5;
+    --code-bg:#212127; --code-fg:#cfcfcf; --block-bg:#212127; --border:#333;
+    --thead:#222; --zebra:#1d1d1d; --quote-fg:#8a8a8a; --quote-bar:#333;
+    --mark:#5a4b00; --tag-bg:#212127; --tag-fg:#4a9bf5;
+  }
+}
+""",
+)
+
+
+# --------------------------------------------------------------------------
+# Hugo (Goldmark)
+# --------------------------------------------------------------------------
+
+HUGO = Flavor(
+    key="hugo",
+    name="Hugo",
+    blurb="Goldmark with Hugo's defaults: typographer on, shortcodes shown "
+          "as markers, +++ TOML front matter, no call-out syntax.",
+    opts=Options(
+        tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
+        hard_breaks=False, mark=False, containers=False, alerts=False,
+        quote_panels=False, images=True, front_matter=True,
+        callout_titles=False, wikilinks=False, hashtags=False, comments=False,
+        template_tags=True, smart_typography=True,
+    ),
+    light={
+        "bg": "#ffffff", "fg": "#1d1e20", "muted": "#6a6f76",
+        "link": "#ff4088", "code_bg": "#f6f6f7", "code_fg": "#d63384",
+        "block_bg": "#f6f6f7", "quote_bg": "#ffffff", "quote_fg": "#55595f",
+        "rule": "#e5e5e8", "table_head": "#f6f6f7", "zebra": "#fbfbfc",
+        "mark_bg": "#ffe9a8", "tag_bg": "#ffe8f0", "tag_fg": "#c9366f",
+        "panels": PANELS_LIGHT,
+    },
+    dark={
+        "bg": "#1b1b1f", "fg": "#e2e2e4", "muted": "#9a9aa2",
+        "link": "#ff77a8", "code_bg": "#26262c", "code_fg": "#ff9ec4",
+        "block_bg": "#232329", "quote_bg": "#1b1b1f", "quote_fg": "#b6b6be",
+        "rule": "#34343c", "table_head": "#232329", "zebra": "#1f1f25",
+        "mark_bg": "#5c4a0a", "tag_bg": "#33212a", "tag_fg": "#ff9ec4",
+        "panels": PANELS_DARK,
+    },
+    metrics={
+        "body_fonts": ["Segoe UI", "Helvetica Neue", "Arial", "DejaVu Sans"],
+        "mono_fonts": ["Cascadia Mono", "Consolas", "DejaVu Sans Mono"],
+        "size_delta": 0, "mono_delta": -1,
+        "headings": {1: 2.0, 2: 1.55, 3: 1.3, 4: 1.12, 5: 1.0, 6: 0.9},
+        "heading_rules": (1,),
+        "quote_style": "bar", "table_style": "lines", "code_style": "bordered",
+        "link_underline": False, "pad_x": 24, "para_gap": 0.55,
+        "panel_labels": True, "show_front_matter": False, "quote_italic": False,
+    },
+    css_vars="""
+:root {
+  --bg:#fff; --fg:#1d1e20; --muted:#6a6f76; --link:#ff4088;
+  --code-bg:#f6f6f7; --code-fg:#d63384; --block-bg:#f6f6f7; --border:#e5e5e8;
+  --thead:#f6f6f7; --zebra:#fbfbfc; --quote-fg:#55595f; --quote-bg:transparent;
+  --quote-bar:#ff4088; --mark:#ffe9a8; --tag-bg:#ffe8f0; --tag-fg:#c9366f;
+  --font-body:"Segoe UI",-apple-system,"Helvetica Neue",sans-serif;
+  --font-mono:"Cascadia Mono",Consolas,monospace;
+  --size:16px; --width:48rem; --radius:4px;
+}
+h1 { border-bottom:1px solid var(--border); padding-bottom:.3em; }
+blockquote { border-left:3px solid var(--quote-bar); }
+pre { border:1px solid var(--border); }
+th { border:0; border-bottom:2px solid var(--border); text-align:left; }
+td { border:0; border-bottom:1px solid var(--border); }
+a { text-decoration:none; }
+a:hover { text-decoration:underline; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#1b1b1f; --fg:#e2e2e4; --muted:#9a9aa2; --link:#ff77a8;
+    --code-bg:#26262c; --code-fg:#ff9ec4; --block-bg:#232329; --border:#34343c;
+    --thead:#232329; --zebra:#1f1f25; --quote-fg:#b6b6be; --quote-bar:#ff77a8;
+    --mark:#5c4a0a; --tag-bg:#33212a; --tag-fg:#ff9ec4;
+  }
+}
+""",
+)
+
+
 FLAVORS: Dict[str, Flavor] = {
-    f.key: f for f in (MDEDIT, GITHUB, CONFLUENCE, VISUAL_STUDIO)
+    f.key: f for f in (MDEDIT, GITHUB, CONFLUENCE, VISUAL_STUDIO,
+                       OBSIDIAN, JEKYLL, HUGO)
 }
 ORDER: List[str] = list(FLAVORS)
 DEFAULT = MDEDIT
@@ -405,6 +636,24 @@ li.task { list-style:none; margin-left:-1.4em; }
 li.task input { margin-right:.5em; }
 del { color:var(--muted); }
 .noimg { color:var(--muted); font-style:italic; }
+.tag {
+  background:var(--tag-bg, var(--code-bg)); color:var(--tag-fg, var(--link));
+  padding:.08em .55em; border-radius:1em; font-size:.9em; white-space:nowrap;
+}
+.template {
+  font-family:var(--font-mono); font-size:.85em; color:var(--muted);
+  background:var(--code-bg); padding:.1em .35em; border-radius:3px;
+}
+.frontmatter {
+  margin:0 0 1.6em; border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--block-bg); font-size:.9em; border-collapse:collapse;
+  display:table; width:100%;
+}
+.frontmatter th, .frontmatter td { border:0; padding:.3em .9em; }
+.frontmatter th {
+  background:transparent; color:var(--muted); font-weight:600;
+  text-align:left; width:12em; white-space:nowrap;
+}
 mark { background:var(--mark); color:inherit; padding:.1em .2em; border-radius:2px; }
 .panel {
   padding:.8em 1em; border-radius:var(--radius); background:var(--block-bg);

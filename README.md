@@ -26,23 +26,34 @@ the **styling** of the preview, and the **CSS** written by *Export HTML*.
 | **GitHub** | GFM: no `==mark==`, no `:::` containers, `> [!NOTE]` alerts | rules under H1-H2, left-bar quotes, zebra tables |
 | **Confluence** | single newlines break the line, `> **Note:**` and `:::` become panels | Atlassian palette, small headings, full-grid tables, bordered code |
 | **Visual Studio** | Markdig: `==mark==` and `:::` containers | IDE colours (light and dark), row-line tables, bordered code |
+| **Obsidian** | `[[wiki links]]`, `#tags`, `%%comments%%`, `> [!note]` callouts *with titles*, single newlines break | default-theme purple, front matter shown as properties, grid tables |
+| **Jekyll** | kramdown + GFM: single newlines break, quotes curl, `{{ liquid }}` markers | Minima: `#2a7ae2` links, italic quotes, lavender code, zebra tables |
+| **Hugo** | Goldmark: typographer on, `{{< shortcodes >}}`, `+++` TOML front matter, no call-out syntax | Hugo pink accent, rule under H1, row-line tables, bordered code |
 
-Per-mode dialect switches:
+Front matter is understood by every mode — Obsidian shows it as properties,
+GitHub renders it as a table, Jekyll and Hugo strip it from the page.
 
-| Feature | mdedit | GitHub | Confluence | Visual Studio |
-|:--|:-:|:-:|:-:|:-:|
-| Pipe tables, task lists, `~~strike~~` | on | on | on | on |
-| Bare URLs linkified | on | on | on | on |
-| Single newline breaks the line | off | off | **on** | off |
-| `==highlight==` | on | off | off | **on** |
-| `::: note` containers | on | off | on | on |
-| `> [!NOTE]` alerts | on | on | on | on |
-| `> **Note:**` panels | off | off | **on** | off |
+Per-mode dialect switches (the notable ones; `--list-features --flavor X`
+prints the lot):
+
+| Feature | mdedit | GitHub | Confl. | VS | Obsidian | Jekyll | Hugo |
+|:--|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Tables, task lists, `~~strike~~`, bare URLs | on | on | on | on | on | on | on |
+| Single newline breaks the line | off | off | **on** | off | **on** | **on** | off |
+| `==highlight==` | on | off | off | **on** | **on** | off | off |
+| `::: note` containers | on | off | on | on | off | off | off |
+| `> [!NOTE]` alerts | on | on | on | on | on | off | off |
+| Call-out titles after the marker | off | off | off | off | **on** | off | off |
+| `> **Note:**` panels | off | off | **on** | off | off | off | off |
+| `[[Wiki links]]`, `#tags`, `%%comments%%` | off | off | off | off | **on** | off | off |
+| `{{ template }}` markers | off | off | off | off | off | **on** | **on** |
+| Smart typography | off | off | off | off | off | **on** | **on** |
 
 *Emulate > What this mode changes...* lists the same table for the current
 mode; *Emulation demo document* opens a sample that exercises all of it.
 These are careful approximations of each platform's presentation, not
 pixel-exact clones — and fonts fall back to whatever the machine has.
+Template tags are only ever *shown*, never executed.
 
 ## Choosing what to render
 
@@ -64,10 +75,15 @@ python mdedit.py notes.md --flavor github --no-autolinks
 python -m mdedit --list-features [--flavor confluence]
 ```
 
-Flags beat the mode; anything you leave out follows it. The full list:
-`--tables`, `--task-lists`, `--strikethrough`, `--autolinks`,
-`--hard-breaks`, `--highlight`, `--containers`, `--alerts`, `--panels`,
-`--images`.
+Flags beat the mode; anything you leave out follows it. The full list, in the
+three groups the dialog uses:
+
+- **Structure** — `--tables`, `--task-lists`, `--images`, `--front-matter`,
+  `--hard-breaks`
+- **Inline** — `--strikethrough`, `--autolinks`, `--highlight`,
+  `--smart-typography`, `--wikilinks`, `--hashtags`, `--template-tags`,
+  `--comments`
+- **Call-outs** — `--containers`, `--alerts`, `--callout-titles`, `--panels`
 
 ## Features
 
@@ -93,13 +109,15 @@ Flags beat the mode; anything you leave out follows it. The full list:
 
 Headings (ATX and setext), paragraphs with soft and hard breaks, fenced and
 indented code blocks, nested block quotes, nested ordered/unordered/task
-lists, thematic breaks, pipe tables with per-column alignment, call-out
-panels, emphasis, strong, strikethrough, highlight, code spans, links,
-autolinks, local images (PNG/GIF), backslash escapes and HTML entities.
+lists, thematic breaks, pipe tables with per-column alignment, YAML and TOML
+front matter, call-out panels, emphasis, strong, strikethrough, highlight,
+code spans, links, autolinks, wiki links, tags, template markers, local
+images (PNG/GIF), backslash escapes and HTML entities.
 
 Clicking a link in the preview that points at a local Markdown file opens
-that file. External links are never fetched — the URL is copied to the
-clipboard instead. `#anchor` links jump to the matching heading.
+that file — a `[[wiki link]]` resolves the same way, to a note in the same
+folder. External links are never fetched; the URL is copied to the clipboard
+instead. `#anchor` links jump to the matching heading.
 
 **Export**
 
@@ -112,9 +130,9 @@ offline.
 ```
 python mdedit.py                          open the editor
 python mdedit.py notes.md                 open the editor on a file
-python mdedit.py notes.md --flavor github open in an emulation mode
+python mdedit.py notes.md --flavor obsidian   open in an emulation mode
 python mdedit.py notes.md --no-tables     open with a feature switched off
-python -m mdedit --export notes.md [out.html] [--flavor confluence]
+python -m mdedit --export notes.md [out.html] [--flavor hugo]
 python -m mdedit --outline notes.md       print the heading outline
 python -m mdedit --list-flavors           show the emulation modes
 python -m mdedit --list-features          show the feature flags

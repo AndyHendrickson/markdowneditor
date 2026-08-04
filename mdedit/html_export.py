@@ -11,6 +11,7 @@ here too: with images off, an image is written as its alt text.
 from __future__ import annotations
 
 import html
+import os
 import re
 from typing import List
 
@@ -88,6 +89,9 @@ class _Writer:
         if isinstance(node, P.Panel):
             return self.panel(node)
 
+        if isinstance(node, P.FrontMatter):
+            return self.front_matter(node)
+
         if isinstance(node, P.ThematicBreak):
             return "<hr>"
 
@@ -114,6 +118,16 @@ class _Writer:
             icon = flavors.PANEL_ICONS[kind]
             head = f'<p class="panel-title">{icon} {html.escape(title)}</p>\n'
         return f'<div class="panel panel-{kind}">\n{head}{inner}\n</div>'
+
+    def front_matter(self, node: P.FrontMatter) -> str:
+        """Metadata: a small table, or nothing at all for site generators."""
+        if not self.fl.metric("show_front_matter", True) or not node.pairs:
+            return ""
+        rows = []
+        for key, value in node.pairs:
+            cells = (f"<th>{html.escape(key)}</th>" if key else "<th></th>")
+            rows.append(f"<tr>{cells}<td>{html.escape(value)}</td></tr>")
+        return '<table class="frontmatter">\n' + "\n".join(rows) + "\n</table>"
 
     def list_item(self, item: P.ListItem, tight: bool) -> str:
         parts = []
@@ -166,11 +180,29 @@ class _Writer:
                     f'<a href="{href}"{title}>{self.inlines(node.children)}</a>')
             elif isinstance(node, P.Image):
                 out.append(self.image(node))
+            elif isinstance(node, P.WikiLink):
+                out.append(self.wikilink(node))
+            elif isinstance(node, P.Tag):
+                out.append(f'<span class="tag">#{html.escape(node.name)}</span>')
+            elif isinstance(node, P.Template):
+                out.append(
+                    f'<code class="template">{html.escape(node.text)}</code>')
             elif isinstance(node, P.HardBreak):
                 out.append("<br>\n")
             elif isinstance(node, P.SoftBreak):
                 out.append("\n")
         return "".join(out)
+
+    def wikilink(self, node: P.WikiLink) -> str:
+        target = node.target.split("#")[0].split("^")[0].strip() or node.target
+        ext = os.path.splitext(target)[1]
+        if node.embed and ext.lower() in (".png", ".gif", ".jpg", ".jpeg",
+                                          ".svg", ".webp"):
+            return self.image(P.Image(alt=node.display, src=target))
+        href = html.escape(target if ext else target + ".md", quote=True)
+        label = html.escape(node.display)
+        mark = "⧉ " if node.embed else ""
+        return f'<a class="wikilink" href="{href}">{mark}{label}</a>'
 
     def image(self, node: P.Image) -> str:
         if not self.opts.images:

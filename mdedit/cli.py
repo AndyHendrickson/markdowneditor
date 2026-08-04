@@ -44,11 +44,16 @@ def _overrides(args) -> dict:
 
 
 def _print_features(flavor):
-    width = max(len(f.flag) for f in P.FEATURES) + 4
+    width = max(len(f.flag) for f in P.FEATURES) + 6
     print(f"{'flag'.ljust(width)}{'in ' + flavor.name:<16}what it does")
-    for f in P.FEATURES:
-        state = "on" if getattr(flavor.opts, f.key) else "off"
-        print(f"--{f.flag.ljust(width - 2)}{state:<16}{f.hint}")
+    for group in P.GROUPS:
+        members = [f for f in P.FEATURES if f.group == group]
+        if not members:
+            continue
+        print(f"\n{group}")
+        for f in members:
+            state = "on" if getattr(flavor.opts, f.key) else "off"
+            print(f"  --{f.flag.ljust(width - 4)}{state:<16}{f.hint}")
     print("\nPrefix any flag with --no- to switch the feature off.")
 
 
