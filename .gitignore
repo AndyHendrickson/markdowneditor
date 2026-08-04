@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code local machine settings (permissions, absolute paths)
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+.DS_Store
