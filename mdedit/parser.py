@@ -52,6 +52,7 @@ class Options:
     comments: bool = False          # %% hidden from the reader %%
     template_tags: bool = False     # {{ liquid }}, {%- -%}, {{< shortcode >}}
     smart_typography: bool = False  # curly quotes, en/em dashes, ellipsis
+    render_html: bool = True        # draw embedded HTML, or show its tags
 
 
 DEFAULT = Options()
@@ -80,6 +81,8 @@ FEATURES = (
             "heading."),
     Feature("hard_breaks", "hard-breaks", "Hard line breaks",
             "A single newline ends the line instead of flowing on."),
+    Feature("render_html", "html", "HTML",
+            "Embedded HTML renders; off shows the tags as written."),
 
     Feature("strikethrough", "strikethrough", "Strikethrough",
             "~~text~~ is struck through; off leaves the tildes.", "Inline"),
@@ -129,6 +132,7 @@ def differences(opts: Options, base: Options) -> tuple:
     """The feature keys where *opts* departs from *base*."""
     return tuple(k for k in FEATURE_KEYS
                  if getattr(opts, k) != getattr(base, k))
+
 
 _PANEL_ALIASES = {
     "note": "note", "info": "info", "information": "info", "tip": "tip",
@@ -208,6 +212,14 @@ class ThematicBreak:
 
 
 @dataclass
+class HtmlBlock:
+    """Embedded HTML: *raw* for the exporter, *children* for the preview."""
+
+    raw: str = ""
+    children: List[object] = field(default_factory=list)
+
+
+@dataclass
 class FrontMatter:
     """The metadata header Obsidian, Jekyll and Hugo files start with."""
 
@@ -254,6 +266,16 @@ class Strike:
 @dataclass
 class Mark:
     children: List[object] = field(default_factory=list)
+
+
+@dataclass
+class Styled:
+    """Inline HTML that carries presentation: colour, underline, sup, sub."""
+
+    children: List[object] = field(default_factory=list)
+    color: str = ""
+    background: str = ""
+    variant: str = ""  # "" | "u" | "sup" | "sub"
 
 
 @dataclass
@@ -390,6 +412,8 @@ def _is_block_start(line: str, opts: Options = DEFAULT) -> bool:
         return True
     if opts.containers and line.lstrip()[:3] == ":::":
         return True
+    if opts.render_html and _html_block_start(line):
+        return True
     if _UL_RE.match(line):
         return True
     m = _OL_RE.match(line)
@@ -424,6 +448,15 @@ def _parse_blocks(lines: List[str], opts: Options = DEFAULT) -> List[object]:
             if m and m.group(2):
                 node, i = _parse_container(lines, i, m, opts)
                 blocks.append(node)
+                continue
+
+        # Embedded HTML ---------------------------------------------------
+        if opts.render_html and stripped.startswith("<") and _html_block_start(line):
+            node, moved = _parse_html_block(lines, i, opts)
+            if moved > i:
+                i = moved
+                if node is not None:
+                    blocks.append(node)
                 continue
 
         # ATX heading -----------------------------------------------------
@@ -476,6 +509,66 @@ def _parse_blocks(lines: List[str], opts: Options = DEFAULT) -> List[object]:
             blocks.append(node)
 
     return blocks
+
+
+_HTML_LINE_RE = re.compile(r"^ {0,3}<(/?)([a-zA-Z][a-zA-Z0-9-]*)")
+_HTML_RAW_TAGS = ("script", "style", "pre", "textarea")
+_HTML_ONLY_TAG_RE = re.compile(
+    r"^ {0,3}</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?/?>[ \t]*$")
+
+
+def _html_block_start(line: str) -> bool:
+    """Does *line* open a block of raw HTML?"""
+    stripped = line.lstrip()
+    if not stripped.startswith("<"):
+        return False
+    if stripped.startswith("<!--"):
+        return True
+    m = _HTML_LINE_RE.match(line)
+    if not m:
+        return False
+    from .htmlparse import BLOCK_TAGS
+
+    return (m.group(2).lower() in BLOCK_TAGS
+            or bool(_HTML_ONLY_TAG_RE.match(line)))
+
+
+def _parse_html_block(lines: List[str], i: int, opts: Options):
+    """Collect an HTML block and convert it to nodes.  CommonMark-ish rules:
+    raw-text elements run to their close tag, everything else to a blank line.
+    """
+    from .htmlparse import BLOCK_TAGS, html_to_nodes
+
+    n = len(lines)
+    stripped = lines[i].lstrip()
+
+    if stripped.startswith("<!--"):  # comments are for the author, not the page
+        while i < n and "-->" not in lines[i]:
+            i += 1
+        return None, min(i + 1, n)
+
+    m = _HTML_LINE_RE.match(lines[i])
+    if not m:
+        return None, i
+    name = m.group(2).lower()
+    chunk: List[str] = []
+
+    if name in _HTML_RAW_TAGS:
+        closer = f"</{name}"  # raw-text elements run to their closing tag
+        while i < n:
+            chunk.append(lines[i])
+            i += 1
+            if closer in chunk[-1].lower():
+                break
+    elif name in BLOCK_TAGS or _HTML_ONLY_TAG_RE.match(lines[i]):
+        while i < n and lines[i].strip():
+            chunk.append(lines[i])
+            i += 1
+    else:
+        return None, i
+
+    raw = "\n".join(chunk)
+    return HtmlBlock(raw=raw, children=html_to_nodes(raw, opts)), i
 
 
 def _parse_fence(lines: List[str], i: int, m: re.Match) -> tuple:
@@ -953,6 +1046,13 @@ def parse_inlines(text: str, opts: Options = DEFAULT,
                 )
                 i = m.end()
                 continue
+            if opts.render_html:
+                res = _inline_html(text, i, opts, in_link)
+                if res is not None:
+                    found, i = res
+                    flush()
+                    nodes.extend(found)
+                    continue
 
         # Bare URLs (GitHub-style linkification)
         if opts.bare_autolinks and not in_link and (c in "hHwW") and \
@@ -992,6 +1092,78 @@ def parse_inlines(text: str, opts: Options = DEFAULT,
 
     flush()
     return nodes
+
+
+_INLINE_TAG_RE = re.compile(
+    r"""<(/?)([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>""")
+
+
+def _find_close(text: str, start: int, name: str):
+    """Where the matching ``</name>`` begins and ends, honouring nesting."""
+    depth = 1
+    pos = start
+    lowered = name.lower()
+    while pos < len(text):
+        m = _INLINE_TAG_RE.search(text, pos)
+        if not m:
+            return None
+        if m.group(2).lower() == lowered:
+            if m.group(1):
+                depth -= 1
+                if depth == 0:
+                    return m.start(), m.end()
+            elif not m.group(3).rstrip().endswith("/"):
+                depth += 1
+        pos = m.end()
+    return None
+
+
+def _inline_html(text: str, i: int, opts: Options, in_link: bool):
+    """Render an inline HTML tag.  Returns (nodes, next index) or None."""
+    from .htmlparse import (CODEISH, DROPPED, INLINE_WRAPPERS, VOID,
+                            colors_of, parse_attrs, wrap_inline)
+
+    m = _INLINE_TAG_RE.match(text, i)
+    if not m:
+        return None
+    closing, name, attr_text = m.group(1), m.group(2).lower(), m.group(3)
+    self_closed = attr_text.rstrip().endswith("/")
+    if closing:
+        return [], m.end()  # a stray end tag renders as nothing
+    attrs = parse_attrs(attr_text)
+
+    if name in DROPPED:
+        found = _find_close(text, m.end(), name)
+        return [], found[1] if found else m.end()
+
+    if name == "br":
+        return [HardBreak()], m.end()
+    if name == "img":
+        return [Image(alt=attrs.get("alt", ""), src=attrs.get("src", ""),
+                      title=attrs.get("title", ""))], m.end()
+    if name in VOID or self_closed:
+        return [], m.end()
+
+    found = _find_close(text, m.end(), name)
+    if found is None:
+        return [], m.end()  # unclosed: the tag itself just disappears
+    inner = text[m.end():found[0]]
+    end = found[1]
+
+    if name in CODEISH:
+        return [Code(re.sub(r"<[^>]*>", "", inner).strip())], end
+    if name == "a" and not in_link:
+        return [Link(children=parse_inlines(inner, opts, in_link=True),
+                     href=attrs.get("href", ""),
+                     title=attrs.get("title", ""))], end
+
+    children = parse_inlines(inner, opts, in_link)
+    if name in INLINE_WRAPPERS:
+        return [wrap_inline(INLINE_WRAPPERS[name], children)], end
+    fg, bg = colors_of(attrs)
+    if fg or bg:
+        return [Styled(children=children, color=fg, background=bg)], end
+    return children, end  # any other tag is transparent
 
 
 def _trim_url(url: str) -> str:

@@ -15,7 +15,7 @@ import os
 import re
 from typing import List
 
-from . import flavors
+from . import flavors, htmlparse
 from . import parser as P
 
 _SLUG_RE = re.compile(r"[^a-z0-9\- ]")
@@ -91,6 +91,11 @@ class _Writer:
 
         if isinstance(node, P.FrontMatter):
             return self.front_matter(node)
+
+        if isinstance(node, P.HtmlBlock):
+            # Pass the author's own markup through, minus anything that could
+            # fetch or run; the page has to keep working offline.
+            return htmlparse.sanitize(node.raw)
 
         if isinstance(node, P.ThematicBreak):
             return "<hr>"
@@ -173,6 +178,8 @@ class _Writer:
                 out.append(f"<del>{self.inlines(node.children)}</del>")
             elif isinstance(node, P.Mark):
                 out.append(f"<mark>{self.inlines(node.children)}</mark>")
+            elif isinstance(node, P.Styled):
+                out.append(self.styled(node))
             elif isinstance(node, P.Link):
                 title = f' title="{html.escape(node.title)}"' if node.title else ""
                 href = html.escape(node.href, quote=True)
@@ -192,6 +199,19 @@ class _Writer:
             elif isinstance(node, P.SoftBreak):
                 out.append("\n")
         return "".join(out)
+
+    def styled(self, node: P.Styled) -> str:
+        inner = self.inlines(node.children)
+        if node.variant in ("sup", "sub", "u"):
+            return f"<{node.variant}>{inner}</{node.variant}>"
+        css = []
+        if node.color:
+            css.append(f"color:{node.color}")
+        if node.background:
+            css.append(f"background:{node.background}")
+        if not css:
+            return inner
+        return f'<span style="{html.escape(";".join(css), quote=True)}">{inner}</span>'
 
     def wikilink(self, node: P.WikiLink) -> str:
         target = node.target.split("#")[0].split("^")[0].strip() or node.target

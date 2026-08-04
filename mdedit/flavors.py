@@ -219,11 +219,11 @@ CONFLUENCE = Flavor(
     key="confluence",
     name="Confluence",
     blurb="Atlassian styling: single newlines break the line, "
-          "\"> **Note:** ...\" and ::: blocks become panels.",
+          "\"> **Note:** ...\" and ::: blocks become panels. No raw HTML.",
     opts=Options(
         tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
         hard_breaks=True, mark=False, containers=True, alerts=True,
-        quote_panels=True,
+        quote_panels=True, render_html=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#172b4d", "muted": "#6b778c",
@@ -519,13 +519,14 @@ HUGO = Flavor(
     key="hugo",
     name="Hugo",
     blurb="Goldmark with Hugo's defaults: typographer on, shortcodes shown "
-          "as markers, +++ TOML front matter, no call-out syntax.",
+          "as markers, +++ TOML front matter, and raw HTML left alone "
+          "(Hugo needs unsafe = true for that).",
     opts=Options(
         tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
         hard_breaks=False, mark=False, containers=False, alerts=False,
         quote_panels=False, images=True, front_matter=True,
         callout_titles=False, wikilinks=False, hashtags=False, comments=False,
-        template_tags=True, smart_typography=True,
+        template_tags=True, smart_typography=True, render_html=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#1d1e20", "muted": "#6a6f76",

@@ -28,7 +28,7 @@ the **styling** of the preview, and the **CSS** written by *Export HTML*.
 | **Visual Studio** | Markdig: `==mark==` and `:::` containers | IDE colours (light and dark), row-line tables, bordered code |
 | **Obsidian** | `[[wiki links]]`, `#tags`, `%%comments%%`, `> [!note]` callouts *with titles*, single newlines break | default-theme purple, front matter shown as properties, grid tables |
 | **Jekyll** | kramdown + GFM: single newlines break, quotes curl, `{{ liquid }}` markers | Minima: `#2a7ae2` links, italic quotes, lavender code, zebra tables |
-| **Hugo** | Goldmark: typographer on, `{{< shortcodes >}}`, `+++` TOML front matter, no call-out syntax | Hugo pink accent, rule under H1, row-line tables, bordered code |
+| **Hugo** | Goldmark: typographer on, `{{< shortcodes >}}`, `+++` TOML front matter, no call-out syntax, raw HTML left alone | Hugo pink accent, rule under H1, row-line tables, bordered code |
 
 Front matter is understood by every mode — Obsidian shows it as properties,
 GitHub renders it as a table, Jekyll and Hugo strip it from the page.
@@ -48,6 +48,7 @@ prints the lot):
 | `[[Wiki links]]`, `#tags`, `%%comments%%` | off | off | off | off | **on** | off | off |
 | `{{ template }}` markers | off | off | off | off | off | **on** | **on** |
 | Smart typography | off | off | off | off | off | **on** | **on** |
+| Embedded HTML renders | on | on | **off** | on | on | on | **off** |
 
 *Emulate > What this mode changes...* lists the same table for the current
 mode; *Emulation demo document* opens a sample that exercises all of it.
@@ -79,7 +80,7 @@ Flags beat the mode; anything you leave out follows it. The full list, in the
 three groups the dialog uses:
 
 - **Structure** — `--tables`, `--task-lists`, `--images`, `--front-matter`,
-  `--hard-breaks`
+  `--hard-breaks`, `--html`
 - **Inline** — `--strikethrough`, `--autolinks`, `--highlight`,
   `--smart-typography`, `--wikilinks`, `--hashtags`, `--template-tags`,
   `--comments`
@@ -118,6 +119,24 @@ Clicking a link in the preview that points at a local Markdown file opens
 that file — a `[[wiki link]]` resolves the same way, to a note in the same
 folder. External links are never fetched; the URL is copied to the clipboard
 instead. `#anchor` links jump to the matching heading.
+
+**HTML**
+
+Embedded HTML renders instead of showing its tags: `<b>`, `<i>`, `<code>`,
+`<kbd>`, `<sup>`/`<sub>`, `<a>`, `<img>`, `<span style="color:…">`, and at
+block level `<table>`, `<ul>`/`<ol>`, `<blockquote>`, `<pre>`, `<h1>`…`<h6>`,
+`<hr>` and `<details>` (which becomes a call-out titled by its `<summary>`).
+Markdown inside inline HTML is still parsed, and a blank line inside a block
+lets Markdown through the way CommonMark says. Everything is built on
+`html.parser` from the standard library — there is no HTML engine.
+
+Tags that could fetch or run something — `script`, `style`, `iframe`,
+`object`, `embed`, `link`, `meta`, `form`, media elements — are dropped with
+their content, as are `on*` handlers and `javascript:` URLs. That holds in
+the preview *and* in exported HTML, so an exported page cannot reach the
+network whatever the document contains. Confluence and Hugo modes leave HTML
+as plain text: Confluence Cloud has no HTML macro, and Hugo needs
+`unsafe = true` before Goldmark emits it.
 
 **Export**
 

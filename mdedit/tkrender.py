@@ -13,6 +13,7 @@ call-outs all come from there.
 from __future__ import annotations
 
 import os
+import re
 import tkinter as tk
 import tkinter.font as tkfont
 from typing import List, Optional
@@ -181,6 +182,7 @@ class MarkdownRenderer:
         f["bolditalic"] = tkfont.Font(
             family=body, size=s, weight="bold", slant="italic"
         )
+        f["small"] = tkfont.Font(family=body, size=max(6, s - 3))
         f["mono"] = tkfont.Font(family=mono, size=ms)
         f["mono_bold"] = tkfont.Font(family=mono, size=ms, weight="bold")
         f["mono_italic"] = tkfont.Font(family=mono, size=ms, slant="italic")
@@ -199,7 +201,7 @@ class MarkdownRenderer:
     def _configure_tags(self):
         t, th, f = self.text, self.theme, self._fonts
         for name in t.tag_names():
-            if name.startswith(("ind_", "mar_")):
+            if name.startswith(("ind_", "mar_", "sty_")):
                 t.tag_delete(name)
 
         t.configure(
@@ -374,6 +376,10 @@ class MarkdownRenderer:
 
         elif isinstance(node, P.FrontMatter):
             self._front_matter(node, indent, tags)
+
+        elif isinstance(node, P.HtmlBlock):
+            for child in node.children:  # already converted to real nodes
+                self._block(child, indent, tags)
 
         elif isinstance(node, P.ThematicBreak):
             self._rule()
@@ -610,6 +616,9 @@ class MarkdownRenderer:
             elif isinstance(node, P.Mark):
                 self._inlines(node.children, tags, tuple(styles) + ("mk",),
                               mono, heading)
+            elif isinstance(node, P.Styled):
+                extra = self._styled_tag(node)
+                self._inlines(node.children, tags + extra, styles, mono, heading)
             elif isinstance(node, P.Link):
                 tag = self._link_tag(node.href, node.title)
                 self._inlines(node.children, tags + (tag,),
@@ -648,6 +657,33 @@ class MarkdownRenderer:
         if "link" in styles:
             out.append(pfx + "link")
         return tuple(out)
+
+    def _styled_tag(self, node: P.Styled) -> tuple:
+        """A tag carrying inline HTML presentation: colour, u, sup, sub."""
+        key = f"sty_{node.color}_{node.background}_{node.variant}"
+        name = re.sub(r"[^A-Za-z0-9_]", "", key)
+        if name in self.text.tag_names():
+            return (name,)
+        opts = {}
+        if node.color:
+            opts["foreground"] = node.color
+        if node.background:
+            opts["background"] = node.background
+        if node.variant == "u":
+            opts["underline"] = True
+        elif node.variant == "sup":
+            opts["offset"] = self.px(5)
+            opts["font"] = self._fonts["small"]
+        elif node.variant == "sub":
+            opts["offset"] = -self.px(3)
+            opts["font"] = self._fonts["small"]
+        try:
+            self.text.tag_configure(name, **opts)
+        except tk.TclError:  # a colour Tk does not know
+            opts.pop("foreground", None)
+            opts.pop("background", None)
+            self.text.tag_configure(name, **opts)
+        return (name,)
 
     def _link_tag(self, href: str, title: str = "") -> str:
         self._link_seq += 1

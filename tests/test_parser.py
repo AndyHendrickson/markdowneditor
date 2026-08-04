@@ -201,11 +201,11 @@ class TestInlines(unittest.TestCase):
     def test_entities(self):
         self.assertEqual(html("&amp; &lt;"), "<p>&amp; &lt;</p>")
 
-    def test_html_is_escaped(self):
-        self.assertEqual(
-            html("<script>alert(1)</script>"),
-            "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>",
-        )
+    def test_html_is_escaped_when_rendering_is_off(self):
+        opts = P.Options(render_html=False)
+        out = html_export.to_html(P.parse("<b>x</b> & <i>y</i>", opts),
+                                  standalone=False, opts=opts)
+        self.assertEqual(out, "<p>&lt;b&gt;x&lt;/b&gt; &amp; &lt;i&gt;y&lt;/i&gt;</p>")
 
     def test_unclosed_emphasis_is_literal(self):
         self.assertEqual(html("*dangling"), "<p>*dangling</p>")
@@ -585,6 +585,125 @@ class TestVaultAndSiteSyntax(unittest.TestCase):
         opts = P.Options(smart_typography=True)
         out = html_export.to_html(P.parse('`a "b" -- c`', opts), standalone=False)
         self.assertIn('a &quot;b&quot; -- c', out)
+
+
+class TestRawHtml(unittest.TestCase):
+    def test_inline_formatting(self):
+        out = html("Some <b>bold</b>, <i>it</i>, <del>gone</del>, <code>c</code>.")
+        self.assertIn("<strong>bold</strong>", out)
+        self.assertIn("<em>it</em>", out)
+        self.assertIn("<del>gone</del>", out)
+        self.assertIn("<code>c</code>", out)
+
+    def test_inline_anchor(self):
+        out = html('An <a href="p.md" title="T">anchor</a>.')
+        self.assertIn('<a href="p.md" title="T">anchor</a>', out)
+
+    def test_markdown_inside_inline_html(self):
+        self.assertIn("<em>md</em>", html("<b>*md*</b>"))
+
+    def test_unknown_inline_tag_is_transparent(self):
+        self.assertEqual(html("<foo>kept</foo>"), "<p>kept</p>")
+
+    def test_unclosed_inline_tag_does_not_eat_text(self):
+        self.assertIn("after", html("<b>after"))
+
+    def test_span_colour(self):
+        out = html('<span style="color:#c00">red</span>')
+        self.assertIn("color:#c00", out)
+        self.assertIn("red", out)
+
+    def test_sup_and_sub(self):
+        out = html("E=mc<sup>2</sup> and H<sub>2</sub>O")
+        self.assertIn("<sup>2</sup>", out)
+        self.assertIn("<sub>2</sub>", out)
+
+    def test_kbd_becomes_code(self):
+        self.assertIn("<code>Ctrl</code>", html("Press <kbd>Ctrl</kbd>"))
+
+    def test_br_and_img(self):
+        self.assertIn("<br>", html("one<br>two"))
+        self.assertIn('<img src="p.png"', html('<img src="p.png" alt="a">'))
+
+    def test_block_table_round_trips(self):
+        src = ("<table>\n<tr><th>A</th><th>B</th></tr>\n"
+               "<tr><td>1</td><td>2</td></tr>\n</table>")
+        doc = P.parse(src)
+        block = doc.children[0]
+        self.assertIsInstance(block, P.HtmlBlock)
+        table = block.children[0]
+        self.assertIsInstance(table, P.Table)
+        self.assertEqual(P.plain_text(table.header[0]), "A")
+        self.assertEqual(P.plain_text(table.rows[0][1]), "2")
+        self.assertIn("<table>", html_export.to_html(doc, standalone=False))
+
+    def test_block_list_and_quote(self):
+        block = P.parse("<ul>\n<li>one</li>\n<li>two</li>\n</ul>").children[0]
+        lst = block.children[0]
+        self.assertIsInstance(lst, P.ListBlock)
+        self.assertEqual(len(lst.items), 2)
+        quote = P.parse("<blockquote>\n<p>said</p>\n</blockquote>").children[0]
+        self.assertIsInstance(quote.children[0], P.BlockQuote)
+
+    def test_details_becomes_a_panel(self):
+        src = "<details>\n<summary>More</summary>\n<p>Hidden</p>\n</details>"
+        panel = P.parse(src).children[0].children[0]
+        self.assertIsInstance(panel, P.Panel)
+        self.assertEqual(panel.title, "More")
+
+    def test_html_heading_and_pre(self):
+        block = P.parse("<h2>Title</h2>").children[0]
+        self.assertIsInstance(block.children[0], P.Heading)
+        self.assertEqual(block.children[0].level, 2)
+        code = P.parse("<pre>\nx = 1\n</pre>").children[0].children[0]
+        self.assertIsInstance(code, P.CodeBlock)
+        self.assertIn("x = 1", code.text)
+
+    def test_blank_line_lets_markdown_through(self):
+        doc = P.parse('<div align="center">\n\n**md**\n\n</div>')
+        kinds = [type(b) for b in doc.children]
+        self.assertEqual(kinds, [P.HtmlBlock, P.Paragraph, P.HtmlBlock])
+        self.assertIn("<strong>md</strong>",
+                      html_export.to_html(doc, standalone=False))
+
+    def test_scripts_are_dropped_everywhere(self):
+        for src in ("<script>alert(1)</script>\n\nAfter.",
+                    "text <script>alert(1)</script> more",
+                    "<iframe src=\"http://x\"></iframe>\n\nAfter."):
+            out = html_export.to_html(P.parse(src), standalone=False)
+            self.assertNotIn("script", out.lower(), src)
+            self.assertNotIn("iframe", out.lower(), src)
+            self.assertNotIn("alert", out, src)
+
+    def test_event_handlers_and_js_urls_are_stripped(self):
+        src = '<div onclick="evil()"><a href="javascript:x">c</a></div>'
+        out = html_export.to_html(P.parse(src), standalone=False)
+        self.assertNotIn("onclick", out)
+        self.assertNotIn("javascript", out)
+
+    def test_exported_page_stays_offline(self):
+        src = ('<script src="https://cdn/x.js"></script>\n\n'
+               '<link rel="stylesheet" href="https://cdn/x.css">\n\nBody\n')
+        out = html_export.to_html(P.parse(src))
+        self.assertNotIn("https://cdn", out)
+        self.assertIn("Body", out)
+
+    def test_switch_off_shows_the_markup(self):
+        opts = P.Options(render_html=False)
+        doc = P.parse("<table><tr><td>x</td></tr></table>", opts)
+        self.assertNotIn(P.HtmlBlock, [type(b) for b in doc.children])
+        out = html_export.to_html(doc, standalone=False, opts=opts)
+        self.assertIn("&lt;table&gt;", out)
+
+    def test_html_comment_is_hidden(self):
+        out = html("<!-- private note -->\n\nVisible\n")
+        self.assertNotIn("private", out)
+        self.assertIn("Visible", out)
+
+    def test_malformed_html_does_not_raise(self):
+        for src in ("<div><p>unclosed", "</div></p>", "<table><tr><td>",
+                    "<b" + "<" * 50, "<a href=" + '"' * 20):
+            html_export.to_html(P.parse(src))
 
 
 class TestFlavors(unittest.TestCase):

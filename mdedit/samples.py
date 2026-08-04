@@ -126,6 +126,7 @@ GitHub renders it as a table, Jekyll and Hugo strip it from the page.
 | `[[Wiki links]]`, `#tags`  |  off   |  off   |  off   | off |    on    |  off   | off  |
 | Template tags              |  off   |  off   |  off   | off |   off    |   on   |  on  |
 | Smart typography           |  off   |  off   |  off   | off |   off    |   on   |  on  |
+| Embedded HTML              |   on   |   on   |  off   | on  |    on    |   on   | off  |
 
 Any of these can be switched off on its own: *Emulate > Rendering features...*
 (`Ctrl+R`), or `--no-tables`, `--no-images` and friends on the command line.
@@ -162,6 +163,32 @@ Markdig and pandoc style. Off in GitHub mode, where it stays literal text.
 
 > **Tip:** a labelled quote. Only Confluence mode turns this into a panel;
 > everywhere else it stays an ordinary block quote.
+
+## HTML
+
+Embedded HTML renders rather than showing its tags: <b>bold</b>,
+<code>code</code>, <kbd>Ctrl</kbd>+<kbd>S</kbd>, E=mc<sup>2</sup>, a
+<span style="color:#c9366f">coloured span</span>, and <a href="#html">an
+anchor</a>. Markdown still works <b>*inside* HTML</b>.
+
+<table>
+<tr><th>Element</th><th align="right">Becomes</th></tr>
+<tr><td>&lt;table&gt;</td><td align="right">a real table</td></tr>
+<tr><td>&lt;ul&gt;, &lt;ol&gt;</td><td align="right">a list</td></tr>
+<tr><td>&lt;details&gt;</td><td align="right">a call-out</td></tr>
+</table>
+
+<details>
+<summary>A details element</summary>
+<p>renders as a call-out with the summary as its title.</p>
+</details>
+
+Confluence and Hugo modes leave the markup alone instead -- Confluence has
+no HTML macro, and Hugo needs `unsafe = true` before Goldmark will emit it.
+
+Anything that could fetch or run something -- `<script>`, `<iframe>`,
+`on*` handlers, `javascript:` links -- is dropped, in the preview and in
+exported HTML, so a page can never reach the network.
 
 ## Line breaks
 
