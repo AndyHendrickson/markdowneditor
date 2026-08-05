@@ -197,6 +197,43 @@ print(parser.outline(doc))
 print(html_export.to_html(doc, flavor=fl, opts=opts))
 ```
 
+## Building an executable
+
+`build.py` produces two things, using only the standard library — no
+PyInstaller, no compiler, no download:
+
+```
+python build.py            # both, then check them
+python build.py --pyz      # just the single file
+python build.py --bundle   # just the Windows folder
+python build.py --clean
+```
+
+**`dist/mdedit.pyz`** (54 KB) — the whole app in one file, made with
+`zipapp`. Runs anywhere Python 3.9+ with tkinter is installed:
+`python mdedit.pyz notes.md`, or double-click it on Windows, where the Python
+launcher owns the `.pyz` extension.
+
+**`dist/mdedit-windows/`** (28 MB) — a portable folder that needs no Python
+at all. It carries its own interpreter, Tcl/Tk, and the standard library
+zipped to 2.6 MB. Copy it anywhere, or onto a USB stick, and run
+`mdedit.exe`.
+
+- `mdedit.exe` — double-click for the editor; `mdedit.exe notes.md` opens a
+  file, and flags work *after* the file name.
+- `mdedit-cli.cmd` — the full command line with flags in any order.
+
+The catch worth knowing: `mdedit.exe` is the bundled interpreter itself
+(a renamed `pythonw.exe`), started through a `._pth` file and a `sitecustomize`
+bootstrap. That is why a flag written *before* the file name would be read by
+Python rather than by mdedit — `mdedit-cli.cmd` exists for those. The
+bootstrap also strips every path that isn't inside the bundle, so the app
+can never import from a Python installed on the host; `build.py` verifies
+that after each build.
+
+The bundle copies the interpreter that runs `build.py`, so build it with the
+Python version you want to ship. Only the `.pyz` is built on non-Windows.
+
 ## Tests
 
 ```
