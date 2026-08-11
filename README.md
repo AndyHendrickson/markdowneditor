@@ -239,3 +239,7 @@ Python version you want to ship. Only the `.pyz` is built on non-Windows.
 ```
 python -m unittest discover -s tests
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
