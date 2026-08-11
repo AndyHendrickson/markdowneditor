@@ -159,6 +159,10 @@ python -m mdedit --list-features          show the feature flags
 
 ## Keys
 
+On macOS every `Ctrl` below is `⌘` instead, following the platform's own
+convention rather than Windows's — with one exception: redo is `⇧⌘Z`, not
+`⌘Y`.
+
 | Key | Action | Key | Action |
 |:----|:-------|:----|:-------|
 | `Ctrl+N` / `O` / `S` | New / open / save | `Ctrl+B` / `I` | Bold / italic |
@@ -167,7 +171,7 @@ python -m mdedit --list-features          show the feature flags
 | `Ctrl+1`…`6` | Heading level | `Esc` | Close the find bar |
 | `Ctrl+P` | Cycle layout | `Ctrl+E` | Next emulation mode |
 | `Ctrl+R` | Rendering features | `Ctrl+D` | Toggle dark theme |
-| `Ctrl+Z` / `Y` | Undo / redo | `Tab` / `Shift+Tab` | Indent / outdent |
+| `Ctrl+Z` / `Y` (`⇧⌘Z` on macOS) | Undo / redo | `Tab` / `Shift+Tab` | Indent / outdent |
 | `Ctrl+=` / `-` | Text bigger / smaller | `F1` | Markdown cheat sheet |
 
 ## Layout

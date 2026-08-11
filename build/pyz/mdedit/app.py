@@ -17,6 +17,9 @@ from tkinter import filedialog, messagebox, ttk
 from . import flavors, html_export, parser as P, samples
 from .tkrender import DARK, LIGHT, THEMES, MarkdownRenderer, body_family, mono_family
 
+IS_MAC = sys.platform == "darwin"
+MOD = "Command" if IS_MAC else "Control"
+
 PREFS_PATH = os.path.join(os.path.expanduser("~"), ".mdedit.json")
 FILETYPES = [
     ("Markdown", "*.md *.markdown *.mdown *.mkd *.mdtxt *.text"),
@@ -48,6 +51,23 @@ def enable_dpi_awareness():
             ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass
+
+
+def _accel(win_label: str, mac_label: str | None = None) -> str:
+    """A menu accelerator string, in this platform's usual style.
+
+    Pass the Windows/Linux form, "Ctrl+Shift+S"; on macOS it becomes the
+    symbol form Mac users expect, "⇧⌘S". Give ``mac_label`` explicitly for
+    shortcuts where the Mac convention uses a different key, not just a
+    different modifier (redo is Ctrl+Y on Windows, ⇧⌘Z on a Mac).
+    """
+    if not IS_MAC:
+        return win_label
+    if mac_label is not None:
+        return mac_label
+    symbols = {"Shift": "⇧", "Alt": "⌥"}
+    *mods, key = win_label.split("+")[1:]  # drop the leading "Ctrl"
+    return "".join(symbols.get(m, m) for m in mods) + "⌘" + key
 
 
 # --------------------------------------------------------------------------
@@ -502,53 +522,53 @@ class MarkdownApp(tk.Tk):
         menubar = tk.Menu(self)
 
         filemenu = tk.Menu(menubar, tearoff=0)
-        filemenu.add_command(label="New", accelerator="Ctrl+N", command=self.new_file)
-        filemenu.add_command(label="Open...", accelerator="Ctrl+O",
+        filemenu.add_command(label="New", accelerator=_accel("Ctrl+N"), command=self.new_file)
+        filemenu.add_command(label="Open...", accelerator=_accel("Ctrl+O"),
                              command=self.open_file)
         self.recent_menu = tk.Menu(filemenu, tearoff=0)
         filemenu.add_cascade(label="Open recent", menu=self.recent_menu)
         filemenu.add_separator()
-        filemenu.add_command(label="Save", accelerator="Ctrl+S", command=self.save)
-        filemenu.add_command(label="Save as...", accelerator="Ctrl+Shift+S",
+        filemenu.add_command(label="Save", accelerator=_accel("Ctrl+S"), command=self.save)
+        filemenu.add_command(label="Save as...", accelerator=_accel("Ctrl+Shift+S"),
                              command=self.save_as)
         filemenu.add_command(label="Export HTML...", command=self.export_html)
         filemenu.add_separator()
-        filemenu.add_command(label="Exit", accelerator="Ctrl+Q", command=self.on_close)
+        filemenu.add_command(label="Exit", accelerator=_accel("Ctrl+Q"), command=self.on_close)
         menubar.add_cascade(label="File", menu=filemenu)
         self._refresh_recent_menu()
 
         editmenu = tk.Menu(menubar, tearoff=0)
-        editmenu.add_command(label="Undo", accelerator="Ctrl+Z",
+        editmenu.add_command(label="Undo", accelerator=_accel("Ctrl+Z"),
                              command=lambda: self._edit_op("undo"))
-        editmenu.add_command(label="Redo", accelerator="Ctrl+Y",
+        editmenu.add_command(label="Redo", accelerator=_accel("Ctrl+Y", "⇧⌘Z"),
                              command=lambda: self._edit_op("redo"))
         editmenu.add_separator()
-        editmenu.add_command(label="Cut", accelerator="Ctrl+X",
+        editmenu.add_command(label="Cut", accelerator=_accel("Ctrl+X"),
                              command=lambda: self.editor.event_generate("<<Cut>>"))
-        editmenu.add_command(label="Copy", accelerator="Ctrl+C",
+        editmenu.add_command(label="Copy", accelerator=_accel("Ctrl+C"),
                              command=lambda: self.editor.event_generate("<<Copy>>"))
-        editmenu.add_command(label="Paste", accelerator="Ctrl+V",
+        editmenu.add_command(label="Paste", accelerator=_accel("Ctrl+V"),
                              command=lambda: self.editor.event_generate("<<Paste>>"))
         editmenu.add_separator()
-        editmenu.add_command(label="Select all", accelerator="Ctrl+A",
+        editmenu.add_command(label="Select all", accelerator=_accel("Ctrl+A"),
                              command=self.select_all)
-        editmenu.add_command(label="Find / replace", accelerator="Ctrl+F",
+        editmenu.add_command(label="Find / replace", accelerator=_accel("Ctrl+F"),
                              command=self.findbar.show)
         menubar.add_cascade(label="Edit", menu=editmenu)
 
         fmt = tk.Menu(menubar, tearoff=0)
-        fmt.add_command(label="Bold", accelerator="Ctrl+B",
+        fmt.add_command(label="Bold", accelerator=_accel("Ctrl+B"),
                         command=lambda: self.wrap_selection("**"))
-        fmt.add_command(label="Italic", accelerator="Ctrl+I",
+        fmt.add_command(label="Italic", accelerator=_accel("Ctrl+I"),
                         command=lambda: self.wrap_selection("*"))
         fmt.add_command(label="Strikethrough",
                         command=lambda: self.wrap_selection("~~"))
-        fmt.add_command(label="Inline code", accelerator="Ctrl+`",
+        fmt.add_command(label="Inline code", accelerator=_accel("Ctrl+`"),
                         command=lambda: self.wrap_selection("`"))
         fmt.add_separator()
         for level in range(1, 7):
             fmt.add_command(
-                label=f"Heading {level}", accelerator=f"Ctrl+{level}",
+                label=f"Heading {level}", accelerator=_accel(f"Ctrl+{level}"),
                 command=lambda n=level: self.toggle_prefix("#" * n + " "),
             )
         fmt.add_separator()
@@ -559,7 +579,7 @@ class MarkdownApp(tk.Tk):
         menubar.add_cascade(label="Format", menu=fmt)
 
         ins = tk.Menu(menubar, tearoff=0)
-        ins.add_command(label="Link", accelerator="Ctrl+K", command=self.insert_link)
+        ins.add_command(label="Link", accelerator=_accel("Ctrl+K"), command=self.insert_link)
         ins.add_command(label="Image", command=self.insert_image)
         ins.add_command(label="Code block", command=self.insert_code_block)
         ins.add_command(label="Table", command=self.insert_table)
@@ -569,7 +589,7 @@ class MarkdownApp(tk.Tk):
         menubar.add_cascade(label="Insert", menu=ins)
 
         view = tk.Menu(menubar, tearoff=0)
-        view.add_command(label="Cycle layout", accelerator="Ctrl+P",
+        view.add_command(label="Cycle layout", accelerator=_accel("Ctrl+P"),
                          command=self.cycle_layout)
         for name, label in (("split", "Editor + preview"), ("editor", "Editor only"),
                             ("preview", "Preview only")):
@@ -584,11 +604,11 @@ class MarkdownApp(tk.Tk):
         view.add_checkbutton(label="Synchronised scrolling",
                              variable=self.sync_scroll)
         view.add_separator()
-        view.add_command(label="Dark theme", accelerator="Ctrl+D",
+        view.add_command(label="Dark theme", accelerator=_accel("Ctrl+D"),
                          command=self.toggle_theme)
-        view.add_command(label="Bigger preview text", accelerator="Ctrl+=",
+        view.add_command(label="Bigger preview text", accelerator=_accel("Ctrl+="),
                          command=lambda: self.bump_font(1))
-        view.add_command(label="Smaller preview text", accelerator="Ctrl+-",
+        view.add_command(label="Smaller preview text", accelerator=_accel("Ctrl+-"),
                          command=lambda: self.bump_font(-1))
         menubar.add_cascade(label="View", menu=view)
 
@@ -600,9 +620,9 @@ class MarkdownApp(tk.Tk):
                 command=lambda k=key: self.set_flavor(k),
             )
         emulate.add_separator()
-        emulate.add_command(label="Next mode", accelerator="Ctrl+E",
+        emulate.add_command(label="Next mode", accelerator=_accel("Ctrl+E"),
                             command=self.cycle_flavor)
-        emulate.add_command(label="Rendering features...", accelerator="Ctrl+R",
+        emulate.add_command(label="Rendering features...", accelerator=_accel("Ctrl+R"),
                             command=self.show_features)
         emulate.add_command(label="What this mode changes...",
                             command=self.show_flavor_info)
@@ -621,10 +641,10 @@ class MarkdownApp(tk.Tk):
 
     #: Shortcuts that stay live while a text entry (the find bar) has focus.
     ENTRY_SAFE = {
-        "<Control-s>", "<Control-S>", "<Control-o>", "<Control-n>",
-        "<Control-q>", "<Control-f>", "<Control-p>", "<Control-d>",
-        "<Control-equal>", "<Control-plus>", "<Control-minus>", "<F1>",
-        "<Control-e>", "<Control-r>",
+        f"<{MOD}-s>", f"<{MOD}-S>", f"<{MOD}-o>", f"<{MOD}-n>",
+        f"<{MOD}-q>", f"<{MOD}-f>", f"<{MOD}-p>", f"<{MOD}-d>",
+        f"<{MOD}-equal>", f"<{MOD}-plus>", f"<{MOD}-minus>", "<F1>",
+        f"<{MOD}-e>", f"<{MOD}-r>",
     }
 
     def _dispatch(self, fn, key: str):
@@ -641,29 +661,30 @@ class MarkdownApp(tk.Tk):
 
     def _bind_keys(self):
         binds = {
-            "<Control-n>": self.new_file,
-            "<Control-o>": self.open_file,
-            "<Control-s>": self.save,
-            "<Control-S>": self.save_as,
-            "<Control-q>": self.on_close,
-            "<Control-f>": self.findbar.show,
-            "<Control-a>": self.select_all,
-            "<Control-b>": lambda: self.wrap_selection("**"),
-            "<Control-i>": lambda: self.wrap_selection("*"),
-            "<Control-grave>": lambda: self.wrap_selection("`"),
-            "<Control-k>": self.insert_link,
-            "<Control-p>": self.cycle_layout,
-            "<Control-d>": self.toggle_theme,
-            "<Control-e>": self.cycle_flavor,
-            "<Control-r>": self.show_features,
-            "<Control-y>": lambda: self._edit_op("redo"),
-            "<Control-equal>": lambda: self.bump_font(1),
-            "<Control-plus>": lambda: self.bump_font(1),
-            "<Control-minus>": lambda: self.bump_font(-1),
+            f"<{MOD}-n>": self.new_file,
+            f"<{MOD}-o>": self.open_file,
+            f"<{MOD}-s>": self.save,
+            f"<{MOD}-S>": self.save_as,
+            f"<{MOD}-q>": self.on_close,
+            f"<{MOD}-f>": self.findbar.show,
+            f"<{MOD}-a>": self.select_all,
+            f"<{MOD}-b>": lambda: self.wrap_selection("**"),
+            f"<{MOD}-i>": lambda: self.wrap_selection("*"),
+            f"<{MOD}-grave>": lambda: self.wrap_selection("`"),
+            f"<{MOD}-k>": self.insert_link,
+            f"<{MOD}-p>": self.cycle_layout,
+            f"<{MOD}-d>": self.toggle_theme,
+            f"<{MOD}-e>": self.cycle_flavor,
+            f"<{MOD}-r>": self.show_features,
+            # Mac convention for redo is Shift+Cmd+Z, not Ctrl+Y.
+            (f"<{MOD}-Z>" if IS_MAC else f"<{MOD}-y>"): lambda: self._edit_op("redo"),
+            f"<{MOD}-equal>": lambda: self.bump_font(1),
+            f"<{MOD}-plus>": lambda: self.bump_font(1),
+            f"<{MOD}-minus>": lambda: self.bump_font(-1),
             "<F1>": self.show_cheatsheet,
         }
         for level in range(1, 7):
-            binds[f"<Control-Key-{level}>"] = (
+            binds[f"<{MOD}-Key-{level}>"] = (
                 lambda n=level: self.toggle_prefix("#" * n + " "))
 
         # Bind on the editor as well as globally.  Widget bindings run before
@@ -676,7 +697,7 @@ class MarkdownApp(tk.Tk):
         # link against) only know its older X11 name "quoteleft" and raise
         # TclError on the rest -- try both and skip a binding that neither
         # name supports rather than crashing the whole app on startup.
-        alt_keysyms = {"<Control-grave>": "<Control-quoteleft>"}
+        alt_keysyms = {f"<{MOD}-grave>": f"<{MOD}-quoteleft>"}
         for key, fn in binds.items():
             handler = lambda e, f=fn, k=key: self._dispatch(f, k)
             for keysym in (key, alt_keysyms.get(key)):
