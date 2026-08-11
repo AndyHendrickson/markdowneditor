@@ -199,13 +199,14 @@ print(html_export.to_html(doc, flavor=fl, opts=opts))
 
 ## Building an executable
 
-`build.py` produces two things, using only the standard library — no
+`build.py` produces three things, using only the standard library — no
 PyInstaller, no compiler, no download:
 
 ```
-python build.py            # both, then check them
+python build.py            # every target for this platform, then check them
 python build.py --pyz      # just the single file
 python build.py --bundle   # just the Windows folder
+python build.py --app      # just the macOS app
 python build.py --clean
 ```
 
@@ -214,10 +215,10 @@ python build.py --clean
 `python mdedit.pyz notes.md`, or double-click it on Windows, where the Python
 launcher owns the `.pyz` extension.
 
-**`dist/mdedit-windows/`** (28 MB) — a portable folder that needs no Python
-at all. It carries its own interpreter, Tcl/Tk, and the standard library
-zipped to 2.6 MB. Copy it anywhere, or onto a USB stick, and run
-`mdedit.exe`.
+**`dist/mdedit-windows/`** (28 MB, built on Windows) — a portable folder
+that needs no Python at all. It carries its own interpreter, Tcl/Tk, and the
+standard library zipped to 2.6 MB. Copy it anywhere, or onto a USB stick, and
+run `mdedit.exe`.
 
 - `mdedit.exe` — double-click for the editor; `mdedit.exe notes.md` opens a
   file, and flags work *after* the file name.
@@ -231,8 +232,59 @@ bootstrap also strips every path that isn't inside the bundle, so the app
 can never import from a Python installed on the host; `build.py` verifies
 that after each build.
 
-The bundle copies the interpreter that runs `build.py`, so build it with the
-Python version you want to ship. Only the `.pyz` is built on non-Windows.
+**`dist/mdedit.app`** (~35–60 MB depending on the interpreter, built on
+macOS) — a double-clickable app bundle. If the Python running `build.py` is
+a framework build, its whole `*.framework` is copied into
+`Contents/Frameworks` and trimmed of test suites and tooling, so the app
+carries its own interpreter and Tcl/Tk and needs nothing installed on the
+host. A non-framework interpreter (Homebrew's `--without-framework` build, a
+bare pyenv build) has nothing analogous to copy; `build.py` says so and
+ships an app that falls back to `python3` on the host's `PATH` instead.
+
+- `Contents/MacOS/mdedit` is a small shell script, not the interpreter
+  itself, so command-line flags work in any order:
+  `dist/mdedit.app/Contents/MacOS/mdedit notes.md --flavor github`.
+- The app isn't signed with an Apple Developer ID, so Gatekeeper blocks a
+  plain double-click the first time. Right-click, choose *Open*, and confirm
+  once; after that it opens normally.
+- The launcher runs the interpreter with `-I` (isolated mode), which keeps
+  `PYTHONPATH` and any other Python on the host out of the way — the
+  bundled equivalent of the Windows `._pth`/`sitecustomize` trick, without
+  needing one.
+- If the app can't start, it writes the traceback to
+  `~/Library/Logs/mdedit-error.log` and shows an alert instead of silently
+  vanishing, since a double-clicked GUI app has no terminal to print to.
+
+**Build with a modern Tcl/Tk, not Apple's system one.** macOS itself has no
+`python3`, but plenty of things put one on `PATH` (Xcode's Command Line
+Tools among them) that link against `/System/Library/Frameworks/Tcl.framework`
+— Apple's own Tcl/Tk 8.5, deprecated since 2012 and no longer maintained.
+On that Tk, mdedit's window opens but paints entirely blank (no crash, no
+log entry — the C-level Aqua drawing just fails silently), and a few key
+bindings raise `TclError: bad event type or keysym` outright. Check what a
+given `python3` carries before building with it:
+
+```
+python3 -c "import tkinter; print(tkinter.TkVersion)"   # 8.5 -> don't build with this one
+```
+
+If it prints `8.5`, get a Python built against Tk 8.6+ instead — either
+[python.org's installer](https://www.python.org/downloads/macos/) or, with
+Homebrew, `brew install python-tk@3.13` (installs `tcl-tk` alongside it),
+then build explicitly with that interpreter:
+
+```
+/opt/homebrew/opt/python@3.13/bin/python3.13 build.py --app
+```
+
+`build.py` prunes and repackages whatever `*.framework` sits behind
+whichever `python3` you point it at, so the fix is choosing the right
+interpreter up front, not anything to pass the script itself.
+
+Both the Windows folder and the macOS app copy the interpreter that runs
+`build.py`, so build each on the platform, with the Python version, you want
+to ship. Only `mdedit.pyz` is built for a platform other than the one you're
+running on.
 
 ## Tests
 

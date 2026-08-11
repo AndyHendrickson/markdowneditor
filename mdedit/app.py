@@ -670,10 +670,23 @@ class MarkdownApp(tk.Tk):
         # the built-in Text class bindings, so "break" there is what stops Tk
         # from also doing its own Ctrl+D (delete char), Ctrl+K (kill line),
         # Ctrl+O (open line) and friends.
+        #
+        # "grave" is the modern name for the backtick key; some Tk builds
+        # (macOS's system Tcl/Tk 8.5, still what plenty of Python installs
+        # link against) only know its older X11 name "quoteleft" and raise
+        # TclError on the rest -- try both and skip a binding that neither
+        # name supports rather than crashing the whole app on startup.
+        alt_keysyms = {"<Control-grave>": "<Control-quoteleft>"}
         for key, fn in binds.items():
             handler = lambda e, f=fn, k=key: self._dispatch(f, k)
-            self.bind_all(key, handler)
-            self.editor.bind(key, handler)
+            for keysym in (key, alt_keysyms.get(key)):
+                if keysym is None:
+                    continue
+                try:
+                    self.bind_all(keysym, handler)
+                    self.editor.bind(keysym, handler)
+                except tk.TclError:
+                    pass
         self.editor.bind("<Return>", self.on_return)
         self.editor.bind("<Tab>", self.on_tab)
         self.editor.bind("<Shift-Tab>", self.on_shift_tab)
