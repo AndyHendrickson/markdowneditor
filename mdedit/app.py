@@ -484,9 +484,16 @@ class MarkdownApp(tk.Tk):
                                state="disabled", cursor="")
         self.pscroll = ttk.Scrollbar(self.right, orient="vertical",
                                      command=self.preview.yview)
-        self.preview.configure(yscrollcommand=self.pscroll.set)
+        # Tables don't word-wrap (a wrapped row throws its columns out of
+        # line with its neighbours), so a wide one runs past the pane edge
+        # instead -- this is how you get back to the rest of it.
+        self.pxscroll = ttk.Scrollbar(self.right, orient="horizontal",
+                                      command=self.preview.xview)
+        self.preview.configure(yscrollcommand=self.pscroll.set,
+                               xscrollcommand=self.pxscroll.set)
         self.preview.grid(row=0, column=0, sticky="nsew")
         self.pscroll.grid(row=0, column=1, sticky="ns")
+        self.pxscroll.grid(row=1, column=0, sticky="ew")
         self.right.rowconfigure(0, weight=1)
         self.right.columnconfigure(0, weight=1)
 
@@ -517,6 +524,7 @@ class MarkdownApp(tk.Tk):
         self.preview.bind("<Configure>", lambda e: self.renderer.resize_rules(e.width))
         for widget in (self.preview,):
             widget.bind("<MouseWheel>", self._preview_wheel)
+            widget.bind("<Shift-MouseWheel>", self._preview_wheel_horizontal)
 
     def _build_menu(self):
         menubar = tk.Menu(self)
@@ -1042,6 +1050,10 @@ class MarkdownApp(tk.Tk):
 
     def _preview_wheel(self, event):
         self.preview.yview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def _preview_wheel_horizontal(self, event):
+        self.preview.xview_scroll(int(-event.delta / 120), "units")
         return "break"
 
     def on_link(self, href: str, action: str):

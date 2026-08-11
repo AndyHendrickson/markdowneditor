@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import textwrap
 import tkinter as tk
 import tkinter.font as tkfont
 from typing import List, Optional
@@ -90,31 +91,42 @@ _TABLE_STYLES = {
 }
 
 
-def _pick_family(candidates, fallback):
+#: Every flavor names its own preferred fonts (mostly Windows ones), which
+#: this falls back past -- not to -- so a flavor that never heard of Menlo
+#: or DejaVu Sans still ends up with *some* real body/mono family on macOS
+#: and Linux, rather than silently landing on a fixed-font sentinel that
+#: isn't an actual family name (see below).
+_BODY_FALLBACKS = ["Segoe UI Variable Text", "Segoe UI", "Helvetica Neue",
+                   "DejaVu Sans", "Arial"]
+_MONO_FALLBACKS = ["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Menlo",
+                   "Monaco", "Courier New"]
+
+
+def _pick_family(candidates, extra_fallbacks, named_font):
     try:
         available = {f.lower() for f in tkfont.families()}
     except tk.TclError:  # pragma: no cover - needs a display
-        return fallback
-    for name in candidates:
+        return named_font
+    for name in (*candidates, *extra_fallbacks):
         if name.lower() in available:
             return name
-    return fallback
+    # Every named candidate is missing -- fall back to whatever family is
+    # actually behind Tk's own "TkDefaultFont"/"TkFixedFont", rather than
+    # that name itself: it names a *font*, not a font *family*, and using
+    # it as a family= value doesn't reliably resolve to it (on macOS it has
+    # landed on the proportional system UI font even for TkFixedFont).
+    try:
+        return tkfont.nametofont(named_font).actual("family")
+    except tk.TclError:  # pragma: no cover - needs a display
+        return named_font
 
 
 def body_family(candidates=None) -> str:
-    return _pick_family(
-        candidates or ["Segoe UI Variable Text", "Segoe UI", "Helvetica Neue",
-                       "DejaVu Sans"],
-        "TkDefaultFont",
-    )
+    return _pick_family(candidates or (), _BODY_FALLBACKS, "TkDefaultFont")
 
 
 def mono_family(candidates=None) -> str:
-    return _pick_family(
-        candidates or ["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Menlo",
-                       "Courier New"],
-        "TkFixedFont",
-    )
+    return _pick_family(candidates or (), _MONO_FALLBACKS, "TkFixedFont")
 
 
 class MarkdownRenderer:
@@ -271,7 +283,12 @@ class MarkdownRenderer:
         t.tag_configure("fmkey", font=f["mono_bold"], background=th["block_bg"],
                         foreground=th["muted"])
         t.tag_configure("bullet", foreground=th["muted"])
-        t.tag_configure("table", font=f["mono"])
+        # Column alignment depends on every row staying on one physical
+        # line; word-wrap would break a wide row at a different point than
+        # its neighbours and throw the columns out of line with each other.
+        # A wide table just runs past the pane edge instead -- scroll or
+        # widen the window to see the rest of it.
+        t.tag_configure("table", font=f["mono"], wrap="none")
         t.tag_configure("tablehead", font=f["mono_bold"],
                         background=th["table_head"])
         t.tag_configure("tablezebra", font=f["mono"], background=th["zebra"])
@@ -547,14 +564,38 @@ class MarkdownRenderer:
             return "", " " * gap
 
         def emit(cells, plains, style):
-            for c in range(cols):
-                left, right = pad(plains[c], widths[c], node.aligns[c])
-                self._ins(" " + left, base + style)
-                self._inlines(cells[c], base + style, mono=True)
-                self._ins(right + " ", base + style)
-                if c < cols - 1:
-                    self._ins("│" if seps else " ", base + style)
-            self._ins("\n", base + style)
+            # A cell longer than its column's 40-char cap wraps onto extra
+            # physical lines rather than stretching the column or getting
+            # cut off -- but only cells that actually need it: one that
+            # fits stays a single line rendered from the real inline
+            # nodes, keeping its bold/code/link formatting. A cell that
+            # wraps loses that formatting for the lines it wraps onto
+            # (wrapping happens on plain text, not the styled node tree),
+            # and the row grows to whichever cell wrapped the most.
+            wrapped = [
+                None if len(plains[c]) <= widths[c]
+                else (textwrap.wrap(plains[c], widths[c]) or [""])
+                for c in range(cols)
+            ]
+            height = max((len(w) for w in wrapped if w is not None), default=1)
+            for line_no in range(height):
+                for c in range(cols):
+                    width, lines = widths[c], wrapped[c]
+                    if lines is None:
+                        if line_no == 0:
+                            left, right = pad(plains[c], width, node.aligns[c])
+                            self._ins(" " + left, base + style)
+                            self._inlines(cells[c], base + style, mono=True)
+                            self._ins(right + " ", base + style)
+                        else:
+                            self._ins(" " + " " * width + " ", base + style)
+                    else:
+                        text = lines[line_no] if line_no < len(lines) else ""
+                        left, right = pad(text, width, node.aligns[c])
+                        self._ins(" " + left + text + right + " ", base + style)
+                    if c < cols - 1:
+                        self._ins("│" if seps else " ", base + style)
+                self._ins("\n", base + style)
 
         def rule():
             joiner = "┼" if seps else "─"
