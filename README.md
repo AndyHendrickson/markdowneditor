@@ -11,8 +11,15 @@ python mdedit.py            # open the editor
 python mdedit.py notes.md   # open a file
 ```
 
-Requires Python 3.9+ with tkinter (bundled with the python.org and Windows
-installers).
+Requires Python 3.9+ with tkinter built against **Tcl/Tk 8.6 or newer**
+(bundled with the python.org and Windows installers). Tk 8.5 is not
+supported — see [Building an executable](#building-an-executable) for why and
+how to check. Tk 8.6.6+ additionally allows tinted quote margins; on anything
+older that one effect is skipped and everything else still works.
+
+```
+python -c "import tkinter; print(tkinter.TkVersion)"    # want 8.6 or higher
+```
 
 ## Emulation modes
 
@@ -203,6 +210,25 @@ print(html_export.to_html(doc, flavor=fl, opts=opts))
 
 ## Building an executable
 
+You will need `tkinter` backed by Tcl/Tk 8.6 or newer, which is probably
+already installed with Python on Windows, but may be missing.
+
+To see if it's installed, and which Tk it carries, run
+
+```
+python3 -m tkinter
+```
+
+A tiny GUI app will pop up if it's installed; it prints its own Tcl and Tk
+version numbers in the window.
+
+If that fails (there is an error), you can install it (Mac, using homebrew):
+
+
+```
+brew install python-tk
+```
+
 `build.py` produces three things, using only the standard library — no
 PyInstaller, no compiler, no download:
 
@@ -215,7 +241,7 @@ python build.py --clean
 ```
 
 **`dist/mdedit.pyz`** (54 KB) — the whole app in one file, made with
-`zipapp`. Runs anywhere Python 3.9+ with tkinter is installed:
+`zipapp`. Runs anywhere Python 3.9+ with tkinter (Tcl/Tk 8.6+) is installed:
 `python mdedit.pyz notes.md`, or double-click it on Windows, where the Python
 launcher owns the `.pyz` extension.
 
