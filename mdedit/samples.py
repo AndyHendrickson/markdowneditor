@@ -209,14 +209,19 @@ Visual Studio modes and stays literal in the others.
 
 | Mode          | Headings          | Quotes        | Tables         | Code      |
 |:--------------|:------------------|:--------------|:---------------|:----------|
-| mdedit        | rules under 1-2   | tinted block  | header rule    | filled    |
-| GitHub        | rules under 1-2   | left bar      | zebra stripes  | filled    |
+| mdedit        | rules under 1-2   | tinted block  | full grid      | filled    |
+| GitHub        | rules under 1-2   | left bar      | grid, zebra    | filled    |
 | Confluence    | no rules, smaller | panel         | full grid      | bordered  |
 | Visual Studio | rule under 1      | left bar      | row lines only | bordered  |
 | Obsidian      | no rules          | left bar      | full grid      | filled    |
-| Jekyll        | no rules          | italic, bar   | zebra stripes  | filled    |
+| Jekyll        | no rules          | italic, bar   | grid, zebra    | filled    |
 | Hugo          | rule under 1      | pink bar      | row lines only | bordered  |
-| Chrome        | rules under 1-2   | left bar      | plain header   | filled    |
+| Chrome        | rules under 1-2   | left bar      | grid, zebra    | filled    |
+
+Tables are boxed in the preview the way they are on the page: every cell is
+bordered, so the preview draws a full frame with row and column dividers.
+The two modes whose CSS clears those borders and keeps only a rule under
+each row -- Visual Studio and Hugo -- are drawn that way here too.
 
 Fonts, colours and spacing follow the same mode, in both the light and dark
 themes -- and so does the stylesheet embedded in exported HTML.

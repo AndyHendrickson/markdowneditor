@@ -82,12 +82,19 @@ DARK = {
 
 THEMES = {"light": LIGHT, "dark": DARK}
 
+#: Column dividers, row dividers, an outer frame, zebra striping.  These
+#: follow the exported CSS rather than leading it: ``BASE_CSS`` puts a border
+#: on every ``th``/``td``, so most modes really are a full grid on the page,
+#: and only the two that clear it -- Visual Studio and Hugo, which keep just
+#: ``border-bottom`` -- are row lines alone.  "plain" and "grid" therefore
+#: draw the same box; what still separates them is the palette, the header
+#: tint and the striping.
 _TABLE_STYLES = {
-    #            vertical separators, rule after each row, zebra striping
-    "plain": (True, False, False),
-    "zebra": (True, False, True),
-    "grid": (True, True, False),
-    "lines": (False, True, False),
+    #            columns, rows,  frame, zebra
+    "plain": (True, True, True, False),
+    "zebra": (True, True, True, True),
+    "grid": (True, True, True, False),
+    "lines": (False, True, False, False),
 }
 
 
@@ -293,6 +300,10 @@ class MarkdownRenderer:
                         background=th["table_head"])
         t.tag_configure("tablezebra", font=f["mono"], background=th["zebra"])
         t.tag_configure("tablerule", font=f["mono"], foreground=th["rule"])
+        # Created after the row tags so it out-ranks them: a divider keeps the
+        # rule colour and the upright font while still sitting on whatever
+        # background its row has (the header tint, or a zebra stripe).
+        t.tag_configure("tablesep", font=f["mono"], foreground=th["rule"])
         t.tag_configure("imgalt", font=f["italic"], foreground=th["muted"])
 
         for kind, (bg, accent) in th["panels"].items():
@@ -540,7 +551,7 @@ class MarkdownRenderer:
         cols = len(node.aligns)
         if not cols:
             return
-        seps, row_rule, zebra = _TABLE_STYLES.get(
+        seps, row_rule, frame, zebra = _TABLE_STYLES.get(
             self._metric("table_style", "plain"), _TABLE_STYLES["plain"])
 
         header = [P.plain_text(c) for c in node.header]
@@ -579,6 +590,8 @@ class MarkdownRenderer:
             ]
             height = max((len(w) for w in wrapped if w is not None), default=1)
             for line_no in range(height):
+                if frame:
+                    self._ins("│", base + style + ("tablesep",))
                 for c in range(cols):
                     width, lines = widths[c], wrapped[c]
                     if lines is None:
@@ -594,22 +607,35 @@ class MarkdownRenderer:
                         left, right = pad(text, width, node.aligns[c])
                         self._ins(" " + left + text + right + " ", base + style)
                     if c < cols - 1:
-                        self._ins("│" if seps else " ", base + style)
-                self._ins("\n", base + style)
+                        if seps:
+                            self._ins("│", base + style + ("tablesep",))
+                        else:
+                            self._ins(" ", base + style)
+                if frame:
+                    self._ins("│", base + style + ("tablesep",))
+                # The row's tint stops at the frame: a tagged newline would
+                # run the header or zebra background on to the pane edge.
+                self._ins("\n", base)
 
-        def rule():
-            joiner = "┼" if seps else "─"
-            self._ins(
-                joiner.join("─" * (widths[c] + 2) for c in range(cols)) + "\n",
-                base + ("tablerule",),
-            )
+        def hline(kind: str):
+            """A horizontal line, junctioned so it meets the verticals."""
+            if not seps:
+                span = sum(w + 2 for w in widths) + cols - 1
+                self._ins("─" * span + "\n", base + ("tablerule",))
+                return
+            left, mid, right = {"top": "┌┬┐", "mid": "├┼┤", "bot": "└┴┘"}[kind]
+            cells = ("─" * (widths[c] + 2) for c in range(cols))
+            self._ins(left + mid.join(cells) + right + "\n",
+                      base + ("tablerule",))
 
+        if frame:
+            hline("top")
         emit(node.header, header, ("tablehead",))
-        rule()
         for k, (row, plains) in enumerate(zip(node.rows, body_rows)):
+            if k == 0 or row_rule:
+                hline("mid")
             emit(row, plains, ("tablezebra",) if zebra and k % 2 else ())
-            if row_rule and k < len(node.rows) - 1:
-                rule()
+        hline("bot")
         self._blank_line(indent, tags)
 
     def _rule(self, thin: bool = False):

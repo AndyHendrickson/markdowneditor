@@ -29,7 +29,7 @@ the **styling** of the preview, and the **CSS** written by *Export HTML*.
 
 | | Dialect | Look |
 |:--|:--|:--|
-| **mdedit** | every extension on | tinted quotes, header rule, filled code |
+| **mdedit** | every extension on | tinted quotes, grid tables, filled code |
 | **GitHub** | GFM: no `==mark==`, no `:::` containers, `> [!NOTE]` alerts | rules under H1-H2, left-bar quotes, zebra tables |
 | **Confluence** | single newlines break the line, `> **Note:**` and `:::` become panels | Atlassian palette, small headings, full-grid tables, bordered code |
 | **Visual Studio** | Markdig: `==mark==` and `:::` containers | IDE colours (light and dark), row-line tables, bordered code |
@@ -134,6 +134,13 @@ lists, thematic breaks, pipe tables with per-column alignment, YAML and TOML
 front matter, call-out panels, emphasis, strong, strikethrough, highlight,
 code spans, links, autolinks, wiki links, tags, template markers, local
 images (PNG/GIF), backslash escapes and HTML entities.
+
+Tables are boxed in the preview, following the same mode as everything else:
+a frame with row and column dividers, drawn in the mode's own rule colour,
+matching the borders its exported CSS puts on every cell. Visual Studio and
+Hugo clear those borders and keep a rule under each row instead, so that is
+what the preview draws for them. A cell too wide for its column wraps inside
+the box rather than pushing the grid out of line.
 
 Clicking a link in the preview that points at a local Markdown file opens
 that file — a `[[wiki link]]` resolves the same way, to a note in the same

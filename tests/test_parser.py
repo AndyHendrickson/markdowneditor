@@ -803,6 +803,16 @@ class TestFlavors(unittest.TestCase):
                                   standalone=False, flavor=flavors.CONFLUENCE)
         self.assertIn("<br>", out)
 
+    def test_table_styles_are_known_and_complete(self):
+        """Every mode names a style the renderer can actually unpack."""
+        from mdedit import flavors, tkrender
+
+        for key in flavors.ORDER:
+            style = flavors.FLAVORS[key].metric("table_style")
+            self.assertIn(style, tkrender._TABLE_STYLES, key)
+        for name, spec in tkrender._TABLE_STYLES.items():
+            self.assertEqual(4, len(spec), name)
+
     def test_chrome_does_not_know_front_matter(self):
         """A browser has no idea what a --- header is, so it shows one."""
         from mdedit import flavors
