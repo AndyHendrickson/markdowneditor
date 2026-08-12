@@ -111,22 +111,24 @@ the **Emulate** menu or `Ctrl+E`; the mode changes three things at once: the
 used by *File > Export HTML*.
 
 That block at the top is front matter. Obsidian shows it as properties,
-GitHub renders it as a table, Jekyll and Hugo strip it from the page.
+GitHub renders it as a table, Jekyll and Hugo strip it from the page -- and
+Chrome, which has never heard of it, shows a rule and a stray heading.
 
-| Feature                    | mdedit | GitHub | Confl. | VS  | Obsidian | Jekyll | Hugo |
-|:---------------------------|:------:|:------:|:------:|:---:|:--------:|:------:|:----:|
-| Pipe tables, task lists    |   on   |   on   |   on   | on  |    on    |   on   |  on  |
-| Bare URLs linkified        |   on   |   on   |   on   | on  |    on    |   on   |  on  |
-| Single newline breaks line |  off   |  off   |   on   | off |    on    |   on   | off  |
-| `==highlight==`            |   on   |  off   |  off   | on  |    on    |  off   | off  |
-| `::: note` containers      |   on   |  off   |   on   | on  |   off    |  off   | off  |
-| `> [!NOTE]` alerts         |   on   |   on   |   on   | on  |    on    |  off   | off  |
-| Call-out titles            |  off   |  off   |  off   | off |    on    |  off   | off  |
-| `> **Note:**` panels       |  off   |  off   |   on   | off |   off    |  off   | off  |
-| `[[Wiki links]]`, `#tags`  |  off   |  off   |  off   | off |    on    |  off   | off  |
-| Template tags              |  off   |  off   |  off   | off |   off    |   on   |  on  |
-| Smart typography           |  off   |  off   |  off   | off |   off    |   on   |  on  |
-| Embedded HTML              |   on   |   on   |  off   | on  |    on    |   on   | off  |
+| Feature                    | mdedit | GitHub | Confl. | VS  | Obsidian | Jekyll | Hugo | Chrome |
+|:---------------------------|:------:|:------:|:------:|:---:|:--------:|:------:|:----:|:------:|
+| Pipe tables, task lists    |   on   |   on   |   on   | on  |    on    |   on   |  on  |   on   |
+| Bare URLs linkified        |   on   |   on   |   on   | on  |    on    |   on   |  on  |   on   |
+| Front matter understood    |   on   |   on   |   on   | on  |    on    |   on   |  on  |  off   |
+| Single newline breaks line |  off   |  off   |   on   | off |    on    |   on   | off  |  off   |
+| `==highlight==`            |   on   |  off   |  off   | on  |    on    |  off   | off  |  off   |
+| `::: note` containers      |   on   |  off   |   on   | on  |   off    |  off   | off  |  off   |
+| `> [!NOTE]` alerts         |   on   |   on   |   on   | on  |    on    |  off   | off  |  off   |
+| Call-out titles            |  off   |  off   |  off   | off |    on    |  off   | off  |  off   |
+| `> **Note:**` panels       |  off   |  off   |   on   | off |   off    |  off   | off  |  off   |
+| `[[Wiki links]]`, `#tags`  |  off   |  off   |  off   | off |    on    |  off   | off  |  off   |
+| Template tags              |  off   |  off   |  off   | off |   off    |   on   |  on  |  off   |
+| Smart typography           |  off   |  off   |  off   | off |   off    |   on   |  on  |  off   |
+| Embedded HTML              |   on   |   on   |  off   | on  |    on    |   on   | off  |   on   |
 
 Any of these can be switched off on its own: *Emulate > Rendering features...*
 (`Ctrl+R`), or `--no-tables`, `--no-images` and friends on the command line.
@@ -155,7 +157,8 @@ ellipsis. Compare this line across Hugo and GitHub.
 Three ways to write one; which are recognised depends on the mode.
 
 > [!WARNING]
-> GitHub alerts. Recognised everywhere, drawn in the mode's own colours.
+> GitHub alerts, drawn in the mode's own colours. Jekyll, Hugo and Chrome
+> have no such syntax, so there they stay ordinary quotes.
 
 ::: info Container
 Markdig and pandoc style. Off in GitHub mode, where it stays literal text.
@@ -213,6 +216,7 @@ Visual Studio modes and stays literal in the others.
 | Obsidian      | no rules          | left bar      | full grid      | filled    |
 | Jekyll        | no rules          | italic, bar   | zebra stripes  | filled    |
 | Hugo          | rule under 1      | pink bar      | row lines only | bordered  |
+| Chrome        | rules under 1-2   | left bar      | plain header   | filled    |
 
 Fonts, colours and spacing follow the same mode, in both the light and dark
 themes -- and so does the stylesheet embedded in exported HTML.

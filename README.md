@@ -36,26 +36,39 @@ the **styling** of the preview, and the **CSS** written by *Export HTML*.
 | **Obsidian** | `[[wiki links]]`, `#tags`, `%%comments%%`, `> [!note]` callouts *with titles*, single newlines break | default-theme purple, front matter shown as properties, grid tables |
 | **Jekyll** | kramdown + GFM: single newlines break, quotes curl, `{{ liquid }}` markers | Minima: `#2a7ae2` links, italic quotes, lavender code, zebra tables |
 | **Hugo** | Goldmark: typographer on, `{{< shortcodes >}}`, `+++` TOML front matter, no call-out syntax, raw HTML left alone | Hugo pink accent, rule under H1, row-line tables, bordered code |
+| **Chrome** | marked with GFM, as the Markdown Viewer extension runs it: no `==mark==`, no `:::`, no `> [!NOTE]` alerts, no front matter | the extension's `github` theme, in a wide column that steps with the window |
 
-Front matter is understood by every mode — Obsidian shows it as properties,
-GitHub renders it as a table, Jekyll and Hugo strip it from the page.
+Every mode but Chrome understands front matter — Obsidian shows it as
+properties, GitHub renders it as a table, Jekyll and Hugo strip it from the
+page. Chrome is the exception because nothing in a browser knows what it is:
+the opening `---` becomes a rule and the rest a stray heading, which is what
+you actually get opening a Jekyll post as a local file.
 
 Per-mode dialect switches (the notable ones; `--list-features --flavor X`
 prints the lot):
 
-| Feature | mdedit | GitHub | Confl. | VS | Obsidian | Jekyll | Hugo |
-|:--|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Tables, task lists, `~~strike~~`, bare URLs | on | on | on | on | on | on | on |
-| Single newline breaks the line | off | off | **on** | off | **on** | **on** | off |
-| `==highlight==` | on | off | off | **on** | **on** | off | off |
-| `::: note` containers | on | off | on | on | off | off | off |
-| `> [!NOTE]` alerts | on | on | on | on | on | off | off |
-| Call-out titles after the marker | off | off | off | off | **on** | off | off |
-| `> **Note:**` panels | off | off | **on** | off | off | off | off |
-| `[[Wiki links]]`, `#tags`, `%%comments%%` | off | off | off | off | **on** | off | off |
-| `{{ template }}` markers | off | off | off | off | off | **on** | **on** |
-| Smart typography | off | off | off | off | off | **on** | **on** |
-| Embedded HTML renders | on | on | **off** | on | on | on | **off** |
+| Feature | mdedit | GitHub | Confl. | VS | Obsidian | Jekyll | Hugo | Chrome |
+|:--|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Tables, task lists, `~~strike~~`, bare URLs | on | on | on | on | on | on | on | on |
+| Front matter understood | on | on | on | on | on | on | on | **off** |
+| Single newline breaks the line | off | off | **on** | off | **on** | **on** | off | off |
+| `==highlight==` | on | off | off | **on** | **on** | off | off | off |
+| `::: note` containers | on | off | on | on | off | off | off | off |
+| `> [!NOTE]` alerts | on | on | on | on | on | off | off | **off** |
+| Call-out titles after the marker | off | off | off | off | **on** | off | off | off |
+| `> **Note:**` panels | off | off | **on** | off | off | off | off | off |
+| `[[Wiki links]]`, `#tags`, `%%comments%%` | off | off | off | off | **on** | off | off | off |
+| `{{ template }}` markers | off | off | off | off | off | **on** | **on** | off |
+| Smart typography | off | off | off | off | off | **on** | **on** | off |
+| Embedded HTML renders | on | on | **off** | on | on | on | **off** | on |
+
+Chrome renders no Markdown on its own — a `.md` file is plain text until an
+extension handles it — so that mode follows the usual one, [Markdown
+Viewer](https://github.com/simov/markdown-viewer), at its defaults: the
+`marked` compiler (`gfm` on, `breaks` off, `smartypants` off, raw HTML
+through) and the `github` theme, which is `github-markdown-light.css`. That
+theme is light-only; mdedit's dark palette for the mode is the `github-dark`
+one you would switch to by hand.
 
 *Emulate > What this mode changes...* lists the same table for the current
 mode; *Emulation demo document* opens a sample that exercises all of it.

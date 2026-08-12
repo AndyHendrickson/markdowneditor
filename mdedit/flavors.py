@@ -583,9 +583,106 @@ a:hover { text-decoration:underline; }
 )
 
 
+# --------------------------------------------------------------------------
+# Chrome (a .md file opened in the browser, through Markdown Viewer)
+# --------------------------------------------------------------------------
+#
+# Chrome has no Markdown of its own -- a .md file is plain text until an
+# extension renders it, and Markdown Viewer is the usual one.  Its defaults
+# are marked (gfm on, breaks off, smartypants off, sanitize off) with the
+# "github" theme, which is github-markdown-light.css.
+#
+# So the palette lands close to GitHub's, and the interesting differences are
+# elsewhere: marked has never implemented "> [!NOTE]" alerts, and nothing
+# here knows what front matter is -- a Jekyll or Hugo post opened in the
+# browser shows its header as a rule and a stray heading, which is exactly
+# the surprise this mode exists to show.  The theme is also light-only; you
+# pick "github-dark" by hand, which is what the dark palette below is.
+
+CHROME = Flavor(
+    key="chrome",
+    name="Chrome",
+    blurb="A .md file in the browser, via Markdown Viewer: marked with GFM "
+          "and the github theme. No > [!NOTE] alerts, and front matter is "
+          "not understood -- it renders as a rule and a heading.",
+    opts=Options(
+        tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
+        hard_breaks=False, mark=False, containers=False, alerts=False,
+        quote_panels=False, images=True, front_matter=False,
+        callout_titles=False, wikilinks=False, hashtags=False, comments=False,
+        template_tags=False, smart_typography=False, render_html=True,
+    ),
+    light={
+        "bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e",
+        "link": "#0969da", "code_bg": "#f0f1f3", "code_fg": "#1f2328",
+        "block_bg": "#f6f8fa", "quote_bg": "#ffffff", "quote_fg": "#59636e",
+        "rule": "#d1d9e0", "table_head": "#ffffff", "zebra": "#f6f8fa",
+        "mark_bg": "#fff8c5", "tag_bg": "#ddf4ff", "tag_fg": "#0969da",
+        "panels": PANELS_LIGHT,
+    },
+    dark={
+        "bg": "#0d1117", "fg": "#f0f6fc", "muted": "#9198a1",
+        "link": "#4493f8", "code_bg": "#1f242c", "code_fg": "#f0f6fc",
+        "block_bg": "#151b23", "quote_bg": "#0d1117", "quote_fg": "#9198a1",
+        "rule": "#3d444d", "table_head": "#0d1117", "zebra": "#151b23",
+        "mark_bg": "#5c4200", "tag_bg": "#121d2f", "tag_fg": "#4493f8",
+        "panels": PANELS_DARK,
+    },
+    metrics={
+        "body_fonts": ["Segoe UI", "Noto Sans", "Helvetica Neue", "Arial",
+                       "DejaVu Sans"],
+        "mono_fonts": ["Consolas", "Menlo", "Cascadia Mono",
+                       "DejaVu Sans Mono"],
+        "size_delta": 0, "mono_delta": -1,
+        "headings": {1: 2.0, 2: 1.5, 3: 1.25, 4: 1.0, 5: 0.875, 6: 0.85},
+        "heading_rules": (1, 2),
+        "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
+        "link_underline": False, "pad_x": 20, "para_gap": 0.5,
+        "panel_labels": True, "show_front_matter": False, "quote_italic": False,
+    },
+    # The width ladder is the extension's own: a centred column that steps up
+    # with the viewport rather than sitting at one fixed measure.
+    css_vars="""
+:root {
+  --bg:#fff; --fg:#1f2328; --muted:#59636e; --link:#0969da;
+  --code-bg:#f0f1f3; --code-fg:#1f2328; --block-bg:#f6f8fa; --border:#d1d9e0;
+  --thead:transparent; --zebra:#f6f8fa; --quote-fg:#59636e; --quote-bg:transparent;
+  --quote-bar:#d1d9e0; --mark:#fff8c5;
+  --font-body:-apple-system,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --size:16px; --width:100%; --radius:6px;
+}
+body { padding:20px; line-height:1.5; }
+@media (min-width:576px)  { :root { --width:576px; } }
+@media (min-width:768px)  { :root { --width:768px; } }
+@media (min-width:992px)  { :root { --width:992px; } }
+@media (min-width:1200px) { :root { --width:1200px; } }
+@media (min-width:1400px) { :root { --width:1400px; } }
+h1,h2 { border-bottom:1px solid var(--border); padding-bottom:.3em; }
+blockquote { border-left:.25em solid var(--quote-bar); }
+table tr:nth-child(2n) td { background:var(--zebra); }
+a { text-decoration:none; }
+a:hover { text-decoration:underline; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0d1117; --fg:#f0f6fc; --muted:#9198a1; --link:#4493f8;
+    --code-bg:#1f242c; --code-fg:#f0f6fc; --block-bg:#151b23; --border:#3d444d;
+    --zebra:#151b23; --quote-fg:#9198a1; --quote-bar:#3d444d; --mark:#5c4200;
+  }
+}
+""",
+)
+
+
 FLAVORS: Dict[str, Flavor] = {
-    f.key: f for f in (MDEDIT, GITHUB, CONFLUENCE, VISUAL_STUDIO,
-                       OBSIDIAN, JEKYLL, HUGO)
+    f.key: f for f in (MDEDIT,
+                       GITHUB,
+                       CONFLUENCE,
+                       VISUAL_STUDIO,
+                       OBSIDIAN,
+                       JEKYLL,
+                       HUGO,
+                       CHROME)
 }
 ORDER: List[str] = list(FLAVORS)
 DEFAULT = MDEDIT

@@ -803,6 +803,33 @@ class TestFlavors(unittest.TestCase):
                                   standalone=False, flavor=flavors.CONFLUENCE)
         self.assertIn("<br>", out)
 
+    def test_chrome_does_not_know_front_matter(self):
+        """A browser has no idea what a --- header is, so it shows one."""
+        from mdedit import flavors
+
+        doc = P.parse("---\ntitle: x\n---\n\nBody\n", flavors.CHROME.opts)
+        self.assertIsInstance(doc.children[0], P.ThematicBreak)
+        self.assertIsInstance(doc.children[1], P.Heading)
+        out = html_export.to_html(doc, standalone=False,
+                                  flavor=flavors.CHROME, opts=flavors.CHROME.opts)
+        self.assertNotIn("frontmatter", out)
+        self.assertIn("title: x", out)
+
+    def test_chrome_is_plain_gfm(self):
+        """marked has no alerts, containers, marks or smart quotes."""
+        from mdedit import flavors
+
+        src = ('> [!NOTE]\n> a\n\n::: note\nb\n:::\n\n==c== and "d" -- e\n\n'
+               "| x | y |\n|:--|--:|\n| 1 | 2 |\n")
+        out = html_export.to_html(P.parse(src, flavors.CHROME.opts),
+                                  standalone=False, flavor=flavors.CHROME)
+        for absent in ('class="panel', "<mark>", "“", "–"):
+            self.assertNotIn(absent, out)
+        self.assertIn("&quot;d&quot;", out)  # quotes stay straight
+        self.assertIn("==c==", out)
+        self.assertIn("<blockquote>", out)
+        self.assertIn("<table>", out)
+
 
 class TestRobustness(unittest.TestCase):
     def test_empty_document(self):
