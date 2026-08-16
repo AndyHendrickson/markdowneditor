@@ -106,7 +106,7 @@ MDEDIT = Flavor(
         "headings": {1: 2.0, 2: 1.55, 3: 1.3, 4: 1.15, 5: 1.0, 6: 0.92},
         "heading_rules": (1, 2),
         "quote_style": "tint", "table_style": "plain", "code_style": "filled",
-        "link_underline": True, "pad_x": 22, "para_gap": 0.55,
+        "link_underline": True, "pad_x": 22, "para_gap": 0.55, "measure": 43,
         "panel_labels": True, "show_front_matter": True, "quote_italic": False,
     },
     css_vars="""
@@ -178,7 +178,7 @@ GITHUB = Flavor(
         "headings": {1: 2.0, 2: 1.5, 3: 1.25, 4: 1.0, 5: 0.875, 6: 0.85},
         "heading_rules": (1, 2),
         "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
-        "link_underline": False, "pad_x": 30, "para_gap": 0.6,
+        "link_underline": False, "pad_x": 30, "para_gap": 0.6, "measure": 59,
         "panel_labels": True, "show_front_matter": True, "quote_italic": False,
     },
     css_vars="""
@@ -256,7 +256,7 @@ CONFLUENCE = Flavor(
         "headings": {1: 1.71, 2: 1.43, 3: 1.14, 4: 1.0, 5: 0.9, 6: 0.85},
         "heading_rules": (),
         "quote_style": "panel", "table_style": "grid", "code_style": "bordered",
-        "link_underline": False, "pad_x": 28, "para_gap": 0.5,
+        "link_underline": False, "pad_x": 28, "para_gap": 0.5, "measure": 65,
         "panel_labels": False, "show_front_matter": False, "quote_italic": False,
     },
     css_vars="""
@@ -327,7 +327,7 @@ VISUAL_STUDIO = Flavor(
         "headings": {1: 2.0, 2: 1.5, 3: 1.17, 4: 1.0, 5: 0.9, 6: 0.85},
         "heading_rules": (1,),
         "quote_style": "bar", "table_style": "lines", "code_style": "bordered",
-        "link_underline": False, "pad_x": 20, "para_gap": 0.5,
+        "link_underline": False, "pad_x": 20, "para_gap": 0.5, "measure": 52,
         "panel_labels": True, "show_front_matter": False, "quote_italic": False,
     },
     css_vars="""
@@ -411,7 +411,7 @@ OBSIDIAN = Flavor(
         "headings": {1: 1.9, 2: 1.55, 3: 1.3, 4: 1.15, 5: 1.05, 6: 0.95},
         "heading_rules": (),
         "quote_style": "bar", "table_style": "grid", "code_style": "filled",
-        "link_underline": False, "pad_x": 26, "para_gap": 0.55,
+        "link_underline": False, "pad_x": 26, "para_gap": 0.55, "measure": 41,
         "panel_labels": True, "show_front_matter": True, "quote_italic": False,
     },
     css_vars="""
@@ -481,7 +481,7 @@ JEKYLL = Flavor(
         "headings": {1: 2.0, 2: 1.625, 3: 1.375, 4: 1.125, 5: 1.0, 6: 0.9},
         "heading_rules": (),
         "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
-        "link_underline": False, "pad_x": 28, "para_gap": 0.6,
+        "link_underline": False, "pad_x": 28, "para_gap": 0.6, "measure": 47,
         "panel_labels": True, "show_front_matter": False, "quote_italic": True,
     },
     css_vars="""
@@ -552,7 +552,7 @@ HUGO = Flavor(
         "headings": {1: 2.0, 2: 1.55, 3: 1.3, 4: 1.12, 5: 1.0, 6: 0.9},
         "heading_rules": (1,),
         "quote_style": "bar", "table_style": "lines", "code_style": "bordered",
-        "link_underline": False, "pad_x": 24, "para_gap": 0.55,
+        "link_underline": False, "pad_x": 24, "para_gap": 0.55, "measure": 45,
         "panel_labels": True, "show_front_matter": False, "quote_italic": False,
     },
     css_vars="""
@@ -640,6 +640,10 @@ CHROME = Flavor(
         "heading_rules": (1, 2),
         "quote_style": "bar", "table_style": "zebra", "code_style": "filled",
         "link_underline": False, "pad_x": 20, "para_gap": 0.5,
+        # The extension's own ladder, in device pixels rather than ems: a
+        # column that steps up with the window instead of holding one measure.
+        "measure": ((576, 536), (768, 728), (992, 952), (1200, 1160),
+                    (1400, 1360)),
         "panel_labels": True, "show_front_matter": False, "quote_italic": False,
     },
     # The width ladder is the extension's own: a centred column that steps up
@@ -768,6 +772,15 @@ mark { background:var(--mark); color:inherit; padding:.1em .2em; border-radius:2
 .panel-danger { border-left-color:#d63c3c; }
 figure.mermaid { margin:1.4em 0; text-align:center; overflow-x:auto; }
 figure.mermaid svg { max-width:100%; height:auto; }
+/* A diagram is a picture, not prose: past the measure it may use the width
+   of the window rather than being shrunk to the text column, and if it is
+   wider still it scrolls inside its own figure. */
+@media (min-width:60rem) {
+  figure.mermaid {
+    width:90vw; max-width:90vw;
+    margin-left:calc(45% - 45vw); margin-right:calc(45% - 45vw);
+  }
+}
 figure.mermaid .on-dark { display:none; }
 @media (prefers-color-scheme: dark) {
   figure.mermaid .on-light { display:none; }

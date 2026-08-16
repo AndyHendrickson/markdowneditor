@@ -141,6 +141,37 @@ def _round_rect(x: float, y: float, w: float, h: float, r: float) -> list:
             x, y2, x, y2 - r, x, y + r, x, y]
 
 
+def fit_columns(natural: List[int], budget: int, minimum: int = 8) -> List[int]:
+    """Share *budget* characters between columns of the given natural widths.
+
+    Everything that fits keeps its natural width; what is left over goes to
+    the columns that were cut, widest first -- so one long "notes" column
+    gives up the room rather than every column being squeezed alike.  If even
+    the minimum does not fit, the table keeps it and runs past the edge,
+    which is at least readable by scrolling.
+    """
+    natural = [max(1, w) for w in natural]
+    if not natural or sum(natural) <= budget:
+        return list(natural)
+    if budget < len(natural) * minimum:
+        return [minimum] * len(natural)
+    lo, hi = minimum, max(natural)
+    while lo < hi:                       # the widest a column may end up
+        mid = (lo + hi + 1) // 2
+        if sum(min(w, mid) for w in natural) <= budget:
+            lo = mid
+        else:
+            hi = mid - 1
+    out = [min(w, lo) for w in natural]
+    spare, k = budget - sum(out), 0
+    while spare > 0 and any(o < n for o, n in zip(out, natural)):
+        if out[k] < natural[k]:
+            out[k] += 1
+            spare -= 1
+        k = (k + 1) % len(out)
+    return out
+
+
 def body_family(candidates=None) -> str:
     return _pick_family(candidates or (), _BODY_FALLBACKS, "TkDefaultFont")
 
@@ -168,6 +199,8 @@ class MarkdownRenderer:
         self._rules: List[tk.Widget] = []
         self._diagrams: List[list] = []      # [canvas, scene, scale factor]
         self._canvas_fonts = {}
+        self._pad_now = -1
+        self._laid_out_at = 0
         self._link_targets = {}
         self._link_seq = 0
         self._list_depth = 0
@@ -201,6 +234,66 @@ class MarkdownRenderer:
 
     def _metric(self, key, default=None):
         return self.flavor.metric(key, default)
+
+    # -- the measure -------------------------------------------------------
+    #
+    # A line of text that runs the whole width of a wide window is hard to
+    # read, which is why every flavour's exported CSS caps the page at some
+    # measure.  The preview follows the same cap: past it the column stops
+    # growing and centres instead, and everything that has to know how wide
+    # the text is -- rules, tables, diagrams -- asks for ``content_width``.
+
+    def _measure_px(self, pane: int) -> int:
+        spec = self._metric("measure", 0)
+        if not spec:
+            return 0
+        if isinstance(spec, (int, float)):          # a measure in ems
+            return self.px(spec * self._size() * 4 / 3)
+        best = 0                                    # or a ladder of steps
+        for floor, width in spec:
+            if pane >= self.px(floor):
+                best = self.px(width)
+        return best
+
+    def _side_pad(self, pane: int) -> int:
+        base = self.px(self._metric("pad_x", 22))
+        measure = self._measure_px(pane)
+        if measure and pane > measure + 2 * base:
+            return int((pane - measure) / 2)
+        return base
+
+    def content_width(self, pane: Optional[int] = None) -> int:
+        """How wide the text column actually is, inside the padding."""
+        if pane is None:
+            pane = self.text.winfo_width()
+        pane = pane if pane > 1 else 640
+        return max(120, pane - 2 * self._side_pad(pane))
+
+    def needs_relayout(self, pane: Optional[int] = None) -> bool:
+        """Has the column moved enough that the text has to be laid out again?
+
+        Rules and diagrams are refitted in place, but a table's columns were
+        measured in characters when it was drawn, so a real change of width
+        means drawing the document again.
+        """
+        if self._doc is None:
+            return False
+        char = max(1, self._fonts["mono"].measure("0"))
+        return abs(self.content_width(pane) - self._laid_out_at) >= char
+
+    def fit_width(self, pane: Optional[int] = None):
+        """Re-centre the text column for the current pane width."""
+        if pane is None:
+            pane = self.text.winfo_width()
+        if pane <= 1:
+            return
+        pad = self._side_pad(pane)
+        if pad != self._pad_now:
+            self._pad_now = pad
+            try:
+                self.text.configure(padx=pad)
+            except tk.TclError:
+                pass
 
     def _size(self) -> int:
         return max(7, self.base_size + int(self._metric("size_delta", 0)))
@@ -239,10 +332,11 @@ class MarkdownRenderer:
             if name.startswith(("ind_", "mar_", "sty_")):
                 t.tag_delete(name)
 
+        self._pad_now = self._side_pad(max(1, t.winfo_width()))
         t.configure(
             background=th["bg"], foreground=th["fg"], insertbackground=th["cursor"],
             selectbackground=th["select"], font=f["body"], wrap="word",
-            padx=self.px(self._metric("pad_x", 22)), pady=self.px(16),
+            padx=self._pad_now, pady=self.px(16),
             spacing1=0, spacing2=2, spacing3=self.px(2),
             borderwidth=0, highlightthickness=0,
         )
@@ -311,7 +405,10 @@ class MarkdownRenderer:
         # its neighbours and throw the columns out of line with each other.
         # A wide table just runs past the pane edge instead -- scroll or
         # widen the window to see the rest of it.
-        t.tag_configure("table", font=f["mono"], wrap="none")
+        # No leading between table lines: the box-drawing characters have to
+        # meet the ones above and below them, or the frame comes out dashed.
+        t.tag_configure("table", font=f["mono"], wrap="none",
+                        spacing1=0, spacing2=0, spacing3=0)
         t.tag_configure("tablehead", font=f["mono_bold"],
                         background=th["table_head"])
         t.tag_configure("tablezebra", font=f["mono"], background=th["zebra"])
@@ -372,6 +469,7 @@ class MarkdownRenderer:
         self._margin_stack.clear()
         t.delete("1.0", "end")
 
+        self._laid_out_at = self.content_width()
         for block in doc.children:
             self._block(block, indent=0, tags=())
         t.delete("end-1c", "end")  # drop the final stray newline
@@ -589,11 +687,23 @@ class MarkdownRenderer:
 
     def _fit(self, width: float, pane: Optional[int] = None,
              indent: int = 0) -> float:
-        """How much a diagram has to shrink to fit the preview pane."""
+        """How much a diagram has to shrink to fit.
+
+        A diagram is a picture, not prose, so it may spill past the measure
+        that keeps the text readable -- up to the pane itself.  It is never
+        shrunk past half size either: below that the labels stop being words.
+        A diagram too big even then runs past the edge and can be scrolled to,
+        the same as a table too wide for the pane.
+        """
         if pane is None:
             pane = self.text.winfo_width()
-        avail = (pane if pane > 1 else 640) - indent - self.px(40)
-        return min(1.0, max(0.35, avail / width)) if width else 1.0
+        pane = pane if pane > 1 else 640
+        base = self.px(self._metric("pad_x", 22))
+        # A diagram starts at the column's left edge, so what it has to play
+        # with is everything from there to the far side of the pane.
+        room = pane - self._side_pad(pane) - base
+        avail = room - indent - self.px(12)
+        return min(1.0, max(0.5, avail / width)) if width else 1.0
 
     def _draw_scene(self, entry: list, factor: float):
         canvas, scene = entry[0], entry[1]
@@ -688,7 +798,14 @@ class MarkdownRenderer:
         for row in body_rows:
             for c in range(cols):
                 widths[c] = max(widths[c], len(row[c]))
-        widths = [min(w, 40) for w in widths]
+
+        # Fit the table to the column rather than to a fixed number of
+        # characters: a cell that has to give way wraps inside its box, and
+        # the table stops running off the edge of a narrow pane.
+        char = max(1, self._fonts["mono"].measure("0"))
+        chrome = 2 * cols + (cols - 1) + (2 if frame else 0)
+        budget = (self.content_width() - indent - self.px(10)) // char - chrome
+        widths = fit_columns([min(w, 60) for w in widths], int(budget))
 
         ind = self._margin_indent(indent + self.px(8))
         base = tuple(tags) + (ind, "table")
@@ -778,10 +895,11 @@ class MarkdownRenderer:
         self._ins("\n", ("p",) if thin else ())
 
     def resize_rules(self, width: Optional[int] = None):
-        """Refit what depends on the pane width: rules, and diagrams."""
+        """Refit what depends on the pane width: the column, rules, diagrams."""
         if width is None:
             width = self.text.winfo_width()
-        span = max(80, width - self.px(60))
+        self.fit_width(width)
+        span = max(80, self.content_width(width) - self.px(8))
         for frame in self._rules:
             try:
                 frame.configure(width=span)

@@ -521,7 +521,7 @@ class MarkdownApp(tk.Tk):
         self.editor.bind("<<TextChanged>>", self.on_edit)
         self.editor.bind("<Configure>", lambda e: self.gutter.redraw())
         self.editor.bind("<MouseWheel>", lambda e: self.after(1, self.gutter.redraw))
-        self.preview.bind("<Configure>", lambda e: self.renderer.resize_rules(e.width))
+        self.preview.bind("<Configure>", self.on_preview_resize)
         for widget in (self.preview,):
             widget.bind("<MouseWheel>", self._preview_wheel)
             widget.bind("<Shift-MouseWheel>", self._preview_wheel_horizontal)
@@ -1006,6 +1006,13 @@ class MarkdownApp(tk.Tk):
         self._schedule(ms, lambda: self.status_msg.configure(text=""))
 
     # -- rendering ---------------------------------------------------------
+
+    def on_preview_resize(self, event):
+        """Re-centre the column, refit the rules and diagrams, and -- when the
+        width really changed -- lay the document out again for the tables."""
+        self.renderer.resize_rules(event.width)
+        if self.renderer.needs_relayout(event.width):
+            self.schedule_render()
 
     def schedule_render(self):
         self._cancel(self._render_job)

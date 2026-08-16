@@ -94,6 +94,10 @@ class Style:
     palette: Dict[str, str] = field(default_factory=lambda: dict(LIGHT))
     size: float = 14.0
     measure: Optional[Callable[[str, float, bool], float]] = None
+    #: How wide a label may run before it wraps.  Mermaid wraps at 200px and
+    #: this is the same idea: without it one long label sets the width of a
+    #: whole rank, and the diagram comes out wider than any screen.
+    wrap: float = 0.0
 
     def width(self, text: str, size: float = 0.0, bold: bool = False) -> float:
         size = size or self.size
@@ -106,6 +110,31 @@ class Style:
         size = size or self.size
         width = max((self.width(l, size, bold) for l in lines), default=0.0)
         return width, len(lines) * self.line_h(size)
+
+    def lines(self, text: str, size: float = 0.0, bold: bool = False,
+              limit: float = 0.0) -> List[str]:
+        """The author's own line breaks, then wrapping for what is still long.
+
+        A single word wider than the limit is left alone: breaking inside
+        ``TruthTableManager`` would cost more than the width it saves.
+        """
+        size = size or self.size
+        limit = limit or self.wrap or self.size * 15
+        out: List[str] = []
+        for para in text.split("\n"):
+            if self.width(para, size, bold) <= limit:
+                out.append(para)
+                continue
+            line = ""
+            for word in para.split(" "):
+                trial = f"{line} {word}" if line else word
+                if line and self.width(trial, size, bold) > limit:
+                    out.append(line)
+                    line = word
+                else:
+                    line = trial
+            out.append(line)
+        return out or [""]
 
     def line_h(self, size: float = 0.0) -> float:
         return (size or self.size) * 1.45
@@ -307,22 +336,34 @@ def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
 
 
 def _place(order: List[str], want: Dict[str, float], size: Dict[str, float],
-           gap: float) -> Dict[str, float]:
-    """Positions as near *want* as the sizes and *gap* allow, in order."""
+           gap: float, extra=None) -> Dict[str, float]:
+    """Positions as near *want* as the sizes and *gap* allow, in order.
+
+    *extra* asks for more room between one particular pair than the standard
+    gap -- it is what keeps a subgraph's box from swallowing the node next
+    door, which belongs to nobody.
+    """
+    gaps = [gap] * max(0, len(order))
+    if extra is not None:
+        for i in range(1, len(order)):
+            gaps[i] = gap + extra(order[i - 1], order[i])
     pos: Dict[str, float] = {}
     edge = -1e9
-    for node in order:
+    for i, node in enumerate(order):
         half = size[node] / 2
-        pos[node] = max(want.get(node, edge + gap + half), edge + gap + half)
+        floor = edge + (gaps[i] if i else gap) + half
+        pos[node] = max(want.get(node, floor), floor)
         edge = pos[node] + half
     # Pull back to the left wherever there is slack, so a rank that was
     # pushed right by one wide node does not drag the rest along with it.
     edge = 1e9
-    for node in reversed(order):
+    for i in range(len(order) - 1, -1, -1):
+        node = order[i]
         half = size[node] / 2
         target = want.get(node, pos[node])
         if target < pos[node]:
-            pos[node] = max(target, min(pos[node], edge - gap - half))
+            room = gaps[i + 1] if i + 1 < len(order) else gap
+            pos[node] = max(target, min(pos[node], edge - room - half))
         edge = pos[node] - half
     return pos
 
@@ -333,16 +374,27 @@ class _Layout:
     routes: List[List[Tuple[float, float]]] = field(default_factory=list)
     boxes: Dict[str, Tuple[float, float, float, float]] = field(
         default_factory=dict)
+    #: Where each labelled link's caption goes, by link index.
+    captions: Dict[int, Tuple[float, float]] = field(default_factory=dict)
     width: float = 0.0
     height: float = 0.0
 
 
-def _graph_layout(ids, sizes, links, direction, style, clusters=()) -> _Layout:
-    """Rank, order and place *ids*; route *links* through the result."""
+def _graph_layout(ids, sizes, links, direction, style, clusters=(),
+                  labels=None) -> _Layout:
+    """Rank, order and place *ids*; route *links* through the result.
+
+    *labels* maps a link's index to the size of its caption.  A caption is
+    laid out like a node of that size, sitting on the link's own route: that
+    is what stops it from landing on a box it has nothing to do with.
+    """
     horizontal = direction in ("LR", "RL")
     gap_cross = style.size * 1.8
-    gap_rank = style.size * (4.0 if horizontal else 3.0)
+    # Ranks are counted in halves, so every link has a rank of its own to put
+    # a caption on, and the empty half-ranks cost nothing.
+    gap_rank = style.size * (2.0 if horizontal else 1.5)
     dummy_cross = style.size * 0.9
+    labels = labels or {}
 
     def cross_size(nid):
         w, h = sizes[nid]
@@ -352,13 +404,15 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=()) -> _Layout:
         w, h = sizes[nid]
         return w if horizontal else h
 
-    rank = _rank_nodes(ids, links)
+    rank = {n: 2 * r for n, r in _rank_nodes(ids, links).items()}
 
-    # Chains: an edge spanning several ranks gets an invisible node on each
-    # one it passes, which is what keeps long edges from cutting through the
-    # boxes in between.
+    # Chains: a link travels as an invisible node on every rank it crosses,
+    # which is what keeps a long one from cutting through the boxes in
+    # between.  The half-rank next to its start is where its caption rides.
     chains: List[List[str]] = []
     dummies: Dict[str, float] = {}
+    spans: Dict[str, Tuple[float, float]] = {}
+    captions: Dict[int, str] = {}
     for k, (src, dst) in enumerate(links):
         if src == dst or src not in rank or dst not in rank:
             chains.append([])
@@ -372,20 +426,43 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=()) -> _Layout:
             chain.append(name)
         chain.append(dst)
         chains.append(chain)
-
-    layers: Dict[int, List[str]] = {}
-    for nid in ids:
-        layers.setdefault(rank[nid], []).append(nid)
-    for name, r in dummies.items():
-        layers.setdefault(r, []).append(name)
-    for r in layers:
-        layers[r].sort(key=lambda n: (n.startswith("\x00"), 0))
+        if k in labels and len(chain) > 2:
+            mark = chain[len(chain) // 2]
+            captions[k] = mark
+            width, height = labels[k]
+            spans[mark] = (height, width) if horizontal else (width, height)
 
     adjacent: Dict[str, List[str]] = {}
+    forward: Dict[str, List[str]] = {}
     for chain in chains:
         for a, b in zip(chain, chain[1:]):
             adjacent.setdefault(a, []).append(b)
             adjacent.setdefault(b, []).append(a)
+            forward.setdefault(a, []).append(b)
+
+    # Seed each rank's order by walking the graph from its starting points,
+    # rather than by how the nodes happened to be written down.  A long edge
+    # travels as an invisible node on every rank it crosses, and this is what
+    # puts that line of them beside the node they came from instead of out at
+    # the edge of the picture with all the other long edges.
+    layers: Dict[int, List[str]] = {}
+    seen: set = set()
+    written = {nid: k for k, nid in enumerate(ids)}
+    for start in sorted(ids, key=lambda n: (rank[n], written[n])):
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            layers.setdefault(_rank_of(node, rank, dummies), []).append(node)
+            for nxt in reversed(forward.get(node, ())):
+                if nxt not in seen:
+                    stack.append(nxt)
+    for name, r in dummies.items():         # anything the walk never reached
+        if name not in seen:
+            seen.add(name)
+            layers.setdefault(r, []).append(name)
 
     home = {}
     for cid, members in clusters:
@@ -395,31 +472,56 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=()) -> _Layout:
     _order_layers(layers, lambda n: adjacent.get(n, ()),
                   (lambda n: home.get(n, "")) if clusters else None)
 
-    span = {n: (cross_size(n) if n in sizes else dummy_cross)
+    span = {n: (cross_size(n) if n in sizes
+                else spans[n][0] if n in spans else dummy_cross)
             for r in layers for n in layers[r]}
+
+    def apart(left: str, right: str) -> float:
+        """More room at a subgraph's edge than inside it, so its box has
+        somewhere to go without landing on the node next door."""
+        return 0.0 if home.get(left, "") == home.get(right, "") \
+            else style.size * 1.7
+
     cross: Dict[str, float] = {}
     for r in sorted(layers):
-        cross.update(_place(layers[r], {}, span, gap_cross))
-    for step in range(6):
+        cross.update(_place(layers[r], {}, span, gap_cross, apart))
+    # Settle: pull each node towards the average of everything it connects
+    # to, on the rank above *and* the one below, then push apart whatever
+    # that put on top of something else.  Looking only one way at a time --
+    # the obvious way to write this -- lets a long chain lag by a little on
+    # every rank, and a diagram that should be one column comes out as a
+    # wide diagonal staircase.
+    for step in range(8):
         ranks = sorted(layers)
-        sweep = ranks[1:] if step % 2 == 0 else ranks[-2::-1]
-        other = -1 if step % 2 == 0 else 1
+        sweep = ranks if step % 2 == 0 else ranks[::-1]
         for r in sweep:
             want = {}
             for node in layers[r]:
                 near = [cross[n] for n in adjacent.get(node, ())
-                        if n in cross and _rank_of(n, rank, dummies) == r + other]
+                        if n in cross and _rank_of(n, rank, dummies) != r]
                 if near:
                     want[node] = sum(near) / len(near)
-            cross.update(_place(layers[r], want, span, gap_cross))
+            cross.update(_place(layers[r], want, span, gap_cross, apart))
 
     # The rank axis: each rank sits below (or right of) the deepest node on
     # the one before it.
     depth: Dict[int, float] = {}
     offset: Dict[int, float] = {}
+    # A subgraph's title needs a clear band above its first rank, or it lands
+    # on whatever box happens to sit at the top of the box it titles.
+    titled = set()
+    for cid, members in clusters:
+        inside = [_rank_of(m, rank, dummies) for m in members
+                  if m in rank or m in dummies]
+        if inside:
+            titled.add(min(inside))
     run = 0.0
     for r in sorted(layers):
-        deep = max((rank_size(n) for n in layers[r] if n in sizes), default=0.0)
+        if r in titled:
+            run += style.size * 1.6
+        deep = max([rank_size(n) for n in layers[r] if n in sizes]
+                   + [spans[n][1] for n in layers[r] if n in spans],
+                   default=0.0)
         depth[r] = deep
         offset[r] = run + deep / 2
         run += deep + gap_rank
@@ -445,6 +547,8 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=()) -> _Layout:
         out.pos[nid] = point(nid)
     for chain in chains:
         out.routes.append([point(n) for n in chain])
+    for k, mark in captions.items():
+        out.captions[k] = point(mark)
     out.width = (total_cross if not horizontal else total_rank)
     out.height = (total_rank if not horizontal else total_cross)
 
@@ -583,7 +687,7 @@ def _label_items(text: str, cx, cy, style: Style, color: str,
     if not text:
         return []
     size = size or style.size * 0.86
-    lines = text.split("\n")
+    lines = style.lines(text, size, limit=style.wrap or style.size * 11)
     w, h = style.block(lines, size)
     items: List[object] = []
     if backdrop:
@@ -617,12 +721,12 @@ def _translate(items: List[object], dx: float, dy: float):
 # --------------------------------------------------------------------------
 
 
-def _node_size(node: MM.Node, style: Style) -> Tuple[float, float]:
-    lines = (node.text or node.id).split("\n")
+def _node_size(lines: List[str], shape: str,
+               style: Style) -> Tuple[float, float]:
+    """How big a box holding *lines* has to be, for the shape it is drawn in."""
     tw, th = style.block(lines)
     pad_x, pad_y = style.size * 0.85, style.size * 0.5
     w, h = tw + 2 * pad_x, max(th + 2 * pad_y, style.size * 2.2)
-    shape = node.shape
     if shape in ("circle", "doublecircle"):
         d = math.hypot(tw, th) + style.size * 1.1
         if shape == "doublecircle":
@@ -715,12 +819,20 @@ def _flowchart_scene(chart: MM.Flowchart, style: Style) -> Optional[Scene]:
     ids = list(chart.nodes)
     if not ids:
         return None
-    sizes = {nid: _node_size(chart.nodes[nid], style) for nid in ids}
+    # Wrap once: the size of a box and the text drawn in it have to come
+    # from the very same lines, or the label spills out of its shape.
+    labels = {nid: style.lines(chart.nodes[nid].text or nid) for nid in ids}
+    sizes = {nid: _node_size(labels[nid], chart.nodes[nid].shape, style)
+             for nid in ids}
     links = [(e.src, e.dst) for e in chart.edges]
     clusters = [(s.id, s.members) for s in chart.subgraphs if s.members]
-    lay = _graph_layout(ids, sizes, links, chart.direction, style, clusters)
+    captions = {k: _caption_size(e.text, style)
+                for k, e in enumerate(chart.edges) if e.text}
+    lay = _graph_layout(ids, sizes, links, chart.direction, style, clusters,
+                        captions)
 
     items: List[object] = []
+    titles: List[object] = []       # subgraph titles, drawn over everything
     # Subgraph boxes go down first so everything else sits on top of them.
     for sub in chart.subgraphs:
         box = lay.boxes.get(sub.id)
@@ -731,36 +843,61 @@ def _flowchart_scene(chart: MM.Flowchart, style: Style) -> Optional[Scene]:
                           stroke=style.color("cluster_stroke"), rx=style.size * 0.4,
                           dash="dash"))
         if sub.title:
-            items.append(Text(x=x + w / 2, y=y + style.size * 1.0,
-                              text=sub.title, fill=style.color("cluster_text"),
-                              size=style.size * 0.92, bold=True))
+            # Titled from the top left, on its own patch of the box's colour.
+            # Centred, it lands on whatever node happens to sit at the top of
+            # the box; the corner is nearly always clear.
+            size = style.size * 0.92
+            pad = style.size * 0.5
+            wide = style.width(sub.title, size, True)
+            titles.append(Rect(x=x + pad / 2, y=y + pad / 2, w=wide + pad,
+                               h=style.line_h(size),
+                               fill=style.color("cluster_fill"), rx=2))
+            titles.append(Text(x=x + pad, y=y + pad / 2 + style.line_h(size) / 2,
+                               text=sub.title, fill=style.color("cluster_text"),
+                               size=size, anchor="start", bold=True))
 
-    for edge, route in zip(chart.edges, lay.routes):
-        items.extend(_edge_items(edge, route, chart, sizes, lay, style))
+    # Lines first, then the boxes, then the labels that go with the lines:
+    # a label belongs on top of whatever its edge happens to pass over,
+    # otherwise a box lands on it and leaves a stray letter showing.
+    over: List[object] = []
+    for k, (edge, route) in enumerate(zip(chart.edges, lay.routes)):
+        drawn, label = _edge_items(edge, route, chart, sizes, lay, style,
+                                   lay.captions.get(k))
+        items.extend(drawn)
+        over.extend(label)
 
     for nid in ids:
         node = chart.nodes[nid]
         cx, cy = lay.pos[nid]
         w, h = sizes[nid]
         items.extend(_node_items(node.shape, cx - w / 2, cy - h / 2, w, h, style))
-        lines = (node.text or node.id).split("\n")
+        lines = labels[nid]
         _, th = style.block(lines)
         top = cy - th / 2 + style.line_h() / 2
         for k, line in enumerate(lines):
             items.append(Text(x=cx, y=top + k * style.line_h(), text=line,
                               fill=style.color("node_text"), size=style.size))
 
-    return _finish(items, style)
+    return _finish(items + titles + over, style)
 
 
-def _edge_items(edge, route, chart, sizes, lay, style) -> List[object]:
+def _caption_size(text: str, style: Style) -> Tuple[float, float]:
+    """The room an edge label needs, as the layout has to reserve it."""
+    size = style.size * 0.86
+    w, h = style.block(style.lines(text, size, limit=style.wrap or
+                                   style.size * 11), size)
+    return w + style.size * 0.8, h + style.size * 0.5
+
+
+def _edge_items(edge, route, chart, sizes, lay, style, spot=None) -> tuple:
+    """One edge, as (what to draw under the boxes, what to draw over them)."""
     color = style.color("edge")
     width = 2.2 if edge.stroke == "thick" else 1.3
     dash = _dash_for(edge.stroke)
 
     if edge.src == edge.dst or len(route) < 2:      # a loop back to itself
         if edge.src not in lay.pos:
-            return []
+            return [], []
         cx, cy = lay.pos[edge.src]
         w, h = sizes[edge.src]
         out = w / 2 + style.size * 1.6
@@ -768,9 +905,9 @@ def _edge_items(edge, route, chart, sizes, lay, style) -> List[object]:
                (cx + out, cy + h / 4), (cx + w / 2, cy + h / 4)]
         items = [Line(points=pts, stroke=color, width=width, dash=dash)]
         items += _head_items(edge.dst_head, pts[-1], pts[-2], style, color)
-        items += _label_items(edge.text, cx + out + style.size, cy, style,
-                              style.color("edge_text"), style.color("label_bg"))
-        return items
+        return items, _label_items(edge.text, cx + out + style.size, cy, style,
+                                   style.color("edge_text"),
+                                   style.color("label_bg"))
 
     points = list(route)
     src_shape = chart.nodes[edge.src].shape
@@ -794,13 +931,18 @@ def _edge_items(edge, route, chart, sizes, lay, style) -> List[object]:
     items += _head_items(edge.dst_head, tip, tail, style, color)
     items += _head_items(edge.src_head, back_tip, back_tail, style, color)
 
+    caption: List[object] = []
     if edge.text:
-        mid = len(points) // 2          # the middle joint of the route
-        lx = (points[mid - 1][0] + points[mid][0]) / 2
-        ly = (points[mid - 1][1] + points[mid][1]) / 2
-        items += _label_items(edge.text, lx, ly, style,
-                              style.color("edge_text"), style.color("label_bg"))
-    return items
+        if spot is not None:            # the slot the layout kept for it
+            lx, ly = spot
+        else:                           # no slot: the middle of the route
+            mid = len(points) // 2
+            lx = (points[mid - 1][0] + points[mid][0]) / 2
+            ly = (points[mid - 1][1] + points[mid][1]) / 2
+        caption = _label_items(edge.text, lx, ly, style,
+                               style.color("edge_text"),
+                               style.color("label_bg"))
+    return items, caption
 
 
 def _finish(items: List[object], style: Style) -> Scene:
@@ -892,12 +1034,15 @@ def _class_scene(dia: MM.ClassDiagram, style: Style) -> Optional[Scene]:
         return None
     sizes = {cid: _class_size(dia.classes[cid], style) for cid in ids}
     links = [(r.left, r.right) for r in dia.relations]
-    lay = _graph_layout(ids, sizes, links, dia.direction, style)
+    notes = {k: _caption_size(r.text, style)
+             for k, r in enumerate(dia.relations) if r.text}
+    lay = _graph_layout(ids, sizes, links, dia.direction, style, (), notes)
 
     color = style.color("edge")
     hollow = style.color("hollow")
     items: List[object] = []
-    for rel, route in zip(dia.relations, lay.routes):
+    captions: List[object] = []     # labels and cardinalities, drawn on top
+    for k, (rel, route) in enumerate(zip(dia.relations, lay.routes)):
         if len(route) < 2 or rel.left == rel.right:
             continue
         points = list(route)
@@ -921,12 +1066,16 @@ def _class_scene(dia: MM.ClassDiagram, style: Style) -> Optional[Scene]:
         items += _head_items(rel.left_head, points[0], points[1], style,
                              color, hollow)
         if rel.text:
-            mid = len(points) // 2
-            lx = (points[mid - 1][0] + points[mid][0]) / 2
-            ly = (points[mid - 1][1] + points[mid][1]) / 2
-            items += _label_items(rel.text, lx, ly, style,
-                                  style.color("edge_text"),
-                                  style.color("label_bg"))
+            spot = lay.captions.get(k)
+            if spot is not None:
+                lx, ly = spot
+            else:
+                mid = len(points) // 2
+                lx = (points[mid - 1][0] + points[mid][0]) / 2
+                ly = (points[mid - 1][1] + points[mid][1]) / 2
+            captions += _label_items(rel.text, lx, ly, style,
+                                     style.color("edge_text"),
+                                     style.color("label_bg"))
         for card, near, far in ((rel.left_card, points[0], points[1]),
                                 (rel.right_card, points[-1], points[-2])):
             if not card:
@@ -935,10 +1084,10 @@ def _class_scene(dia: MM.ClassDiagram, style: Style) -> Optional[Scene]:
             dist = math.hypot(far[0] - near[0], far[1] - near[1]) or 1
             fx = (far[0] - near[0]) / dist
             fy = (far[1] - near[1]) / dist
-            items += _label_items(card, near[0] + fx * step - fy * step * 0.8,
-                                  near[1] + fy * step + fx * step * 0.8, style,
-                                  style.color("edge_text"), "",
-                                  style.size * 0.8)
+            captions += _label_items(
+                card, near[0] + fx * step - fy * step * 0.8,
+                near[1] + fy * step + fx * step * 0.8, style,
+                style.color("edge_text"), "", style.size * 0.8)
 
     for cid in ids:
         cx, cy = lay.pos[cid]
@@ -946,7 +1095,7 @@ def _class_scene(dia: MM.ClassDiagram, style: Style) -> Optional[Scene]:
         items.extend(_class_items(dia.classes[cid], cx - w / 2, cy - h / 2,
                                   w, h, style))
 
-    scene = _finish(items, style)
+    scene = _finish(items + captions, style)
     return _with_title(scene, dia.title, style)
 
 

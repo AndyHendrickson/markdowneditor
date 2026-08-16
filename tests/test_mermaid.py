@@ -327,6 +327,66 @@ class TestLayout(unittest.TestCase):
         self.assertGreater(large.width, small.width)
         self.assertGreater(large.height, small.height)
 
+    def test_long_labels_wrap(self):
+        text = "one two three four five six seven eight nine ten eleven"
+        style = D.Style()
+        lines = style.lines(text)
+        self.assertGreater(len(lines), 1)
+        for line in lines:
+            self.assertLessEqual(style.width(line), style.size * 15 + 1)
+        self.assertEqual(" ".join(lines), text)     # nothing lost
+
+    def test_wrapping_keeps_the_authors_own_breaks(self):
+        style = D.Style()
+        self.assertEqual(style.lines("short\nlines"), ["short", "lines"])
+
+    def test_one_long_word_is_left_alone(self):
+        self.assertEqual(D.Style().lines("Supercalifragilistic" * 3),
+                         ["Supercalifragilistic" * 3])
+
+    def test_wrapping_keeps_a_node_narrow(self):
+        long = ("flowchart TD\n A[one two three four five six seven eight "
+                "nine ten eleven twelve thirteen fourteen fifteen sixteen "
+                "seventeen eighteen nineteen twenty] --> B\n")
+        wide = D.render(M.parse(long), D.Style(wrap=9999))
+        wrapped = D.render(M.parse(long), D.Style())
+        self.assertLess(wrapped.width, wide.width / 3)
+        self.assertGreater(wrapped.height, wide.height)      # taller instead
+
+    def test_label_text_matches_the_box_it_is_in(self):
+        # Whatever the box was sized for has to be what is drawn in it.
+        sc = scene("flowchart TD\n A[a much longer label than fits on a line]"
+                   " --> B[short]\n")
+        boxes = [i for i in sc.items if isinstance(i, D.Rect) and i.fill]
+        for text in [i for i in sc.items if isinstance(i, D.Text)]:
+            self.assertTrue(
+                any(box.x - 1 <= text.x <= box.x + box.w + 1
+                    and box.y - 1 <= text.y <= box.y + box.h + 1
+                    for box in boxes), text.text)
+
+    def test_edge_labels_are_drawn_over_the_boxes(self):
+        sc = scene("flowchart TD\n A --> |a label| B\n")
+        kinds = [type(i).__name__ for i in sc.items]
+        self.assertIn("Text", kinds)
+        label = max(i for i, k in enumerate(kinds) if k == "Text")
+        last_box = max(i for i, item in enumerate(sc.items)
+                       if isinstance(item, D.Rect) and item.fill)
+        self.assertGreater(label, last_box)
+
+    def test_edge_labels_get_room_of_their_own(self):
+        plain = scene("flowchart TD\n A --> B\n")
+        wordy = scene("flowchart TD\n A --> |a really quite long caption| B\n")
+        self.assertGreater(wordy.width, plain.width)
+        self.assertGreater(wordy.height, plain.height)
+
+    def test_a_chain_does_not_drift_sideways(self):
+        sc = scene("flowchart TD\n" + "\n".join(
+            f" N{k}[Step number {k}] --> N{k + 1}[Step number {k + 1}]"
+            for k in range(10)))
+        boxes = [i for i in sc.items if isinstance(i, D.Rect) and i.fill]
+        centres = sorted(b.x + b.w / 2 for b in boxes)
+        self.assertLess(centres[-1] - centres[0], 40)
+
     def test_palettes_differ(self):
         light = scene("flowchart TD\n A --> B\n", "light")
         dark = scene("flowchart TD\n A --> B\n", "dark")

@@ -126,6 +126,9 @@ three groups the dialog uses:
 - Light and dark themes, adjustable text size, three layouts (split, editor
   only, preview only), synchronised scrolling. Preferences persist in
   `~/.mdedit.json`.
+- The preview keeps a readable text column: widen the window past the mode's
+  measure and the text centres rather than stretching, while tables and
+  diagrams are refitted to whatever width there is.
 
 **Rendering**
 
@@ -136,12 +139,21 @@ front matter, call-out panels, emphasis, strong, strikethrough, highlight,
 code spans, links, autolinks, wiki links, tags, template markers, local
 images (PNG/GIF), mermaid diagrams, backslash escapes and HTML entities.
 
+The preview holds a **measure**, the same one the mode's exported CSS uses:
+past it the text column stops growing and centres instead of running the
+full width of the window, because a very long line is hard to read. Each
+mode brings its own — mdedit 43em, GitHub 59em, Confluence 65em and so on,
+with Chrome stepping up in stages the way the extension does. Below the
+measure the column simply uses what the pane has.
+
 Tables are boxed in the preview, following the same mode as everything else:
 a frame with row and column dividers, drawn in the mode's own rule colour,
 matching the borders its exported CSS puts on every cell. Visual Studio and
 Hugo clear those borders and keep a rule under each row instead, so that is
-what the preview draws for them. A cell too wide for its column wraps inside
-the box rather than pushing the grid out of line.
+what the preview draws for them. Columns are fitted to the width actually
+available: the ones that fit keep their natural width and the widest give up
+the room, wrapping inside their boxes rather than pushing the grid past the
+edge of the pane. Narrow the window and the table is laid out again to suit.
 
 **Diagrams**
 
@@ -174,12 +186,20 @@ Three diagram types are understood.
 Anything else — gantt, state, ER, pie, journey — stays a code block, as does
 a diagram whose syntax cannot be read, so a fence never disappears. Inside a
 diagram, a statement that isn't understood (styling, `click`, `classDef`) is
-skipped rather than losing the picture. Layout is a layered rank-and-order
-pass for flowcharts and class diagrams, and one top-to-bottom pass for
-sequence diagrams: a careful approximation of what mermaid draws, not a
-clone of it, and a big graph will be laid out more plainly than mermaid
-would lay it out. In the preview a diagram wider than the pane is scaled to
-fit; in exported HTML it scrolls.
+skipped rather than losing the picture.
+
+Layout is a layered rank-and-order pass for flowcharts and class diagrams,
+and one top-to-bottom pass for sequence diagrams. Long labels wrap, so one
+wordy box cannot set the width of a whole row; every link that carries a
+label gets a slot of its own on the way through, so captions sit clear of
+the boxes instead of on top of them; and a subgraph is titled from its top
+left corner, where there is usually room, rather than across the middle of
+whatever sits at the top of the box. It is a careful approximation of what mermaid draws, not a clone
+of it — a big graph will be laid out more plainly than mermaid would lay it
+out. A diagram may use more width than the text column, up to the window; it
+is never shrunk past half size, and one still too wide runs past the edge
+and can be scrolled to, like a table too wide for the pane. In exported HTML
+it scrolls inside its own figure.
 
 Clicking a link in the preview that points at a local Markdown file opens
 that file — a `[[wiki link]]` resolves the same way, to a note in the same
@@ -258,6 +278,7 @@ mdedit/
   samples.py           welcome doc, cheat sheet, emulation demo
 tests/test_parser.py   parser / exporter tests
 tests/test_mermaid.py  mermaid parsing, layout and SVG tests
+tests/test_layout.py   preview measure, table fitting, resize behaviour
 ```
 
 `parser.py` is independent of tkinter, so it can be used on its own:
