@@ -19,7 +19,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from typing import List, Optional
 
-from . import flavors
+from . import diagram, flavors
 from . import parser as P
 
 # Base chrome colours.  A flavour's palette is layered on top of these for
@@ -128,6 +128,19 @@ def _pick_family(candidates, extra_fallbacks, named_font):
         return named_font
 
 
+def _round_rect(x: float, y: float, w: float, h: float, r: float) -> list:
+    """Corner points for a rounded rectangle drawn as a smoothed polygon.
+
+    The canvas has no rounded rectangle of its own; doubling each corner
+    point and letting Tk spline through them is the usual stand-in, and it is
+    what stadium and rounded flowchart nodes are drawn with.
+    """
+    x2, y2 = x + w, y + h
+    return [x + r, y, x2 - r, y, x2, y, x2, y + r,
+            x2, y2 - r, x2, y2, x2 - r, y2, x + r, y2,
+            x, y2, x, y2 - r, x, y + r, x, y]
+
+
 def body_family(candidates=None) -> str:
     return _pick_family(candidates or (), _BODY_FALLBACKS, "TkDefaultFont")
 
@@ -152,6 +165,9 @@ class MarkdownRenderer:
         self._fonts = {}
         self._images: List[tk.PhotoImage] = []
         self._windows: List[tk.Widget] = []
+        self._rules: List[tk.Widget] = []
+        self._diagrams: List[list] = []      # [canvas, scene, scale factor]
+        self._canvas_fonts = {}
         self._link_targets = {}
         self._link_seq = 0
         self._list_depth = 0
@@ -345,6 +361,8 @@ class MarkdownRenderer:
             except tk.TclError:
                 pass
         self._windows.clear()
+        self._rules.clear()
+        self._diagrams.clear()
         self._images.clear()
         for name in self._link_targets:
             t.tag_delete(name)
@@ -395,6 +413,9 @@ class MarkdownRenderer:
 
         elif isinstance(node, P.CodeBlock):
             self._code_block(node, indent, tags)
+
+        elif isinstance(node, P.Diagram):
+            self._diagram(node, indent, tags)
 
         elif isinstance(node, P.BlockQuote):
             self._quote(node, indent, tags)
@@ -515,6 +536,113 @@ class MarkdownRenderer:
         else:
             self._ins(" " * width + "\n", base)
         self._blank_line(indent, tags)
+
+    # -- mermaid diagrams --------------------------------------------------
+
+    def _canvas_font(self, size: float, bold: bool = False,
+                     italic: bool = False, mono: bool = False):
+        """A font measured and drawn in *pixels*, as the layout expects.
+
+        Tk reads a negative ``size`` as a pixel height, which is what lets the
+        canvas agree with a layout that thinks in pixels throughout.
+        """
+        key = (int(round(size)), bold, italic, mono)
+        font = self._canvas_fonts.get(key)
+        if font is None:
+            family = (mono_family(self._metric("mono_fonts")) if mono
+                      else body_family(self._metric("body_fonts")))
+            font = tkfont.Font(
+                family=family, size=-max(6, int(round(size))),
+                weight="bold" if bold else "normal",
+                slant="italic" if italic else "roman",
+            )
+            self._canvas_fonts[key] = font
+        return font
+
+    def _diagram_style(self) -> diagram.Style:
+        size = self.px(self._size() * 4 / 3)     # points -> device pixels
+        return diagram.style_for(
+            self.theme.get("name", "light"), size=max(9, size),
+            measure=lambda text, sz, bold: self._canvas_font(
+                sz, bold).measure(text),
+        )
+
+    def _diagram(self, node: P.Diagram, indent: int, tags: tuple):
+        scene = None
+        if self.opts.mermaid:
+            scene = diagram.render(node.model, self._diagram_style())
+        if scene is None:      # unreadable after all: show it as it was typed
+            self._code_block(P.CodeBlock(text=node.source, lang="mermaid"),
+                             indent, tags)
+            return
+
+        canvas = tk.Canvas(self.text, background=self.theme["bg"],
+                           highlightthickness=0, borderwidth=0)
+        entry = [canvas, scene, 0.0]
+        self._diagrams.append(entry)
+        self._draw_scene(entry, self._fit(scene.width, indent=indent))
+        self._windows.append(canvas)
+        self.text.window_create("end", window=canvas, padx=self.px(4),
+                                pady=self.px(6))
+        self._ins("\n", tuple(tags))
+        self._blank_line(indent, tags)
+
+    def _fit(self, width: float, pane: Optional[int] = None,
+             indent: int = 0) -> float:
+        """How much a diagram has to shrink to fit the preview pane."""
+        if pane is None:
+            pane = self.text.winfo_width()
+        avail = (pane if pane > 1 else 640) - indent - self.px(40)
+        return min(1.0, max(0.35, avail / width)) if width else 1.0
+
+    def _draw_scene(self, entry: list, factor: float):
+        canvas, scene = entry[0], entry[1]
+        canvas.delete("all")
+        canvas.configure(width=int(scene.width * factor) + 2,
+                         height=int(scene.height * factor) + 2)
+        for item in scene.items:
+            self._draw_item(canvas, item, factor)
+        entry[2] = factor
+
+    def _draw_item(self, canvas: tk.Canvas, item, f: float):
+        dash = {"dash": (6, 4), "dot": (2, 3)}.get(getattr(item, "dash", ""), "")
+        width = max(1, int(round(getattr(item, "width", 1.0) * f)))
+
+        if isinstance(item, diagram.Rect):
+            x, y = item.x * f, item.y * f
+            w, h = item.w * f, item.h * f
+            radius = min(item.rx * f, w / 2, h / 2)
+            if radius > 1:
+                canvas.create_polygon(
+                    _round_rect(x, y, w, h, radius), smooth=True,
+                    fill=item.fill, outline=item.stroke, width=width,
+                    dash=dash or None)
+            else:
+                canvas.create_rectangle(
+                    x, y, x + w, y + h, fill=item.fill,
+                    outline=item.stroke, width=width, dash=dash or None)
+        elif isinstance(item, diagram.Ellipse):
+            canvas.create_oval(
+                (item.cx - item.rx) * f, (item.cy - item.ry) * f,
+                (item.cx + item.rx) * f, (item.cy + item.ry) * f,
+                fill=item.fill, outline=item.stroke, width=width,
+                dash=dash or None)
+        elif isinstance(item, diagram.Poly):
+            canvas.create_polygon(
+                [c * f for point in item.points for c in point],
+                fill=item.fill, outline=item.stroke, width=width,
+                dash=dash or None)
+        elif isinstance(item, diagram.Line):
+            canvas.create_line(
+                [c * f for point in item.points for c in point],
+                fill=item.stroke, width=width, dash=dash or None,
+                capstyle="round", joinstyle="round")
+        elif isinstance(item, diagram.Text):
+            canvas.create_text(
+                item.x * f, item.y * f, text=item.text, fill=item.fill,
+                anchor={"start": "w", "end": "e"}.get(item.anchor, "center"),
+                font=self._canvas_font(item.size * f, item.bold, item.italic,
+                                       item.mono))
 
     def _list(self, node: P.ListBlock, indent: int, tags: tuple):
         body = self._fonts["body"]
@@ -644,20 +772,28 @@ class MarkdownRenderer:
             background=self.theme["rule"], borderwidth=0,
         )
         self._windows.append(frame)
+        self._rules.append(frame)
         self.text.window_create("end", window=frame, padx=self.px(4),
                                 pady=self.px(2) if thin else self.px(9))
         self._ins("\n", ("p",) if thin else ())
 
     def resize_rules(self, width: Optional[int] = None):
-        """Stretch horizontal rules to the current widget width."""
+        """Refit what depends on the pane width: rules, and diagrams."""
         if width is None:
             width = self.text.winfo_width()
         span = max(80, width - self.px(60))
-        for frame in self._windows:
+        for frame in self._rules:
             try:
                 frame.configure(width=span)
             except tk.TclError:
                 pass
+        for entry in self._diagrams:
+            factor = self._fit(entry[1].width, width)
+            if abs(factor - entry[2]) > 0.02:
+                try:
+                    self._draw_scene(entry, factor)
+                except tk.TclError:     # the canvas is already gone
+                    pass
 
     # -- inline ------------------------------------------------------------
 

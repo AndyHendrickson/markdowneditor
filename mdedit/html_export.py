@@ -15,7 +15,7 @@ import os
 import re
 from typing import List
 
-from . import flavors, htmlparse
+from . import diagram, flavors, htmlparse
 from . import parser as P
 
 _SLUG_RE = re.compile(r"[^a-z0-9\- ]")
@@ -79,8 +79,10 @@ class _Writer:
             return f"<p>{self.inlines(node.children)}</p>"
 
         if isinstance(node, P.CodeBlock):
-            cls = f' class="language-{html.escape(node.lang)}"' if node.lang else ""
-            return f"<pre><code{cls}>{html.escape(node.text)}</code></pre>"
+            return self.code_block(node)
+
+        if isinstance(node, P.Diagram):
+            return self.diagram(node)
 
         if isinstance(node, P.BlockQuote):
             inner = "\n".join(self.block(c) for c in node.children)
@@ -111,6 +113,30 @@ class _Writer:
             return self.table(node)
 
         return ""
+
+    def code_block(self, node: P.CodeBlock) -> str:
+        cls = f' class="language-{html.escape(node.lang)}"' if node.lang else ""
+        return f"<pre><code{cls}>{html.escape(node.text)}</code></pre>"
+
+    def diagram(self, node: P.Diagram) -> str:
+        """A mermaid diagram, drawn twice: once light, once dark.
+
+        The picture is inline SVG with its colours baked in, so the page
+        carries one of each and lets the reader's own colour scheme pick.
+        Nothing is fetched and no script runs -- there is no mermaid here,
+        only the shapes it would have drawn.
+        """
+        if not self.opts.mermaid:
+            return self.code_block(P.CodeBlock(text=node.source, lang="mermaid"))
+        drawn = []
+        for mode in ("light", "dark"):
+            scene = diagram.render(node.model, diagram.style_for(mode))
+            if scene is None:
+                return self.code_block(
+                    P.CodeBlock(text=node.source, lang="mermaid"))
+            svg = diagram.to_svg(scene, f"{node.kind} diagram")
+            drawn.append(f'<span class="on-{mode}">{svg}</span>')
+        return f'<figure class="mermaid">{"".join(drawn)}</figure>'
 
     def panel(self, node: P.Panel) -> str:
         kind = node.kind if node.kind in flavors.PANEL_LABELS else "note"

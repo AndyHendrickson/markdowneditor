@@ -145,7 +145,7 @@ GITHUB = Flavor(
     opts=Options(
         tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
         hard_breaks=False, mark=False, containers=False, alerts=True,
-        quote_panels=False,
+        quote_panels=False, mermaid=True,
     ),
     light={
         "bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e",
@@ -223,7 +223,7 @@ CONFLUENCE = Flavor(
     opts=Options(
         tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
         hard_breaks=True, mark=False, containers=True, alerts=True,
-        quote_panels=True, render_html=False,
+        quote_panels=True, render_html=False, mermaid=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#172b4d", "muted": "#6b778c",
@@ -302,7 +302,7 @@ VISUAL_STUDIO = Flavor(
     opts=Options(
         tables=True, task_lists=True, strikethrough=True, bare_autolinks=True,
         hard_breaks=False, mark=True, containers=True, alerts=True,
-        quote_panels=False,
+        quote_panels=False, mermaid=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#1e1e1e", "muted": "#6d6d6d",
@@ -386,7 +386,7 @@ OBSIDIAN = Flavor(
         hard_breaks=True, mark=True, containers=False, alerts=True,
         quote_panels=False, images=True, front_matter=True,
         callout_titles=True, wikilinks=True, hashtags=True, comments=True,
-        template_tags=False, smart_typography=False,
+        template_tags=False, smart_typography=False, mermaid=True,
     ),
     light={
         "bg": "#ffffff", "fg": "#222222", "muted": "#6e6e6e",
@@ -456,7 +456,7 @@ JEKYLL = Flavor(
         hard_breaks=True, mark=False, containers=False, alerts=False,
         quote_panels=False, images=True, front_matter=True,
         callout_titles=False, wikilinks=False, hashtags=False, comments=False,
-        template_tags=True, smart_typography=True,
+        template_tags=True, smart_typography=True, mermaid=False,
     ),
     light={
         "bg": "#fdfdfd", "fg": "#111111", "muted": "#828282",
@@ -527,6 +527,7 @@ HUGO = Flavor(
         quote_panels=False, images=True, front_matter=True,
         callout_titles=False, wikilinks=False, hashtags=False, comments=False,
         template_tags=True, smart_typography=True, render_html=False,
+        mermaid=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#1d1e20", "muted": "#6a6f76",
@@ -611,6 +612,7 @@ CHROME = Flavor(
         quote_panels=False, images=True, front_matter=False,
         callout_titles=False, wikilinks=False, hashtags=False, comments=False,
         template_tags=False, smart_typography=False, render_html=True,
+        mermaid=False,
     ),
     light={
         "bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e",
@@ -764,4 +766,11 @@ mark { background:var(--mark); color:inherit; padding:.1em .2em; border-radius:2
 .panel-tip, .panel-success { border-left-color:#2da26a; }
 .panel-warning { border-left-color:#d99013; }
 .panel-danger { border-left-color:#d63c3c; }
+figure.mermaid { margin:1.4em 0; text-align:center; overflow-x:auto; }
+figure.mermaid svg { max-width:100%; height:auto; }
+figure.mermaid .on-dark { display:none; }
+@media (prefers-color-scheme: dark) {
+  figure.mermaid .on-light { display:none; }
+  figure.mermaid .on-dark { display:inline; }
+}
 """

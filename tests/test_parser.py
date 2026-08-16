@@ -841,6 +841,65 @@ class TestFlavors(unittest.TestCase):
         self.assertIn("<table>", out)
 
 
+class TestMermaid(unittest.TestCase):
+    """The fence-level side of it; ``test_mermaid.py`` covers the drawing."""
+
+    FENCE = "```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n"
+
+    def test_fence_becomes_a_diagram(self):
+        node = P.parse(self.FENCE).children[0]
+        self.assertIsInstance(node, P.Diagram)
+        self.assertEqual(node.kind, "flowchart")
+        self.assertIn("flowchart TD", node.source)
+
+    def test_unreadable_diagram_stays_a_code_block(self):
+        node = P.parse("```mermaid\ngantt\n  title Roadmap\n```\n").children[0]
+        self.assertIsInstance(node, P.CodeBlock)
+        self.assertEqual(node.lang, "mermaid")
+
+    def test_other_languages_are_untouched(self):
+        node = P.parse("```python\nflowchart = 1\n```\n").children[0]
+        self.assertIsInstance(node, P.CodeBlock)
+
+    def test_feature_off_keeps_the_source(self):
+        opts = P.with_overrides(P.DEFAULT, {"mermaid": False})
+        node = P.parse(self.FENCE, opts).children[0]
+        self.assertIsInstance(node, P.CodeBlock)
+        self.assertEqual(node.lang, "mermaid")
+
+    def test_export_writes_inline_svg(self):
+        out = html(self.FENCE)
+        self.assertIn('<figure class="mermaid">', out)
+        self.assertEqual(out.count("<svg"), 2)      # one light, one dark
+        self.assertIn('class="on-light"', out)
+        self.assertIn('class="on-dark"', out)
+        self.assertNotIn("<pre>", out)
+
+    def test_export_with_the_feature_off(self):
+        opts = P.with_overrides(P.DEFAULT, {"mermaid": False})
+        out = html_export.to_html(P.parse(self.FENCE, opts), standalone=False,
+                                  opts=opts)
+        self.assertIn('<code class="language-mermaid">', out)
+        self.assertNotIn("<svg", out)
+
+    def test_flavor_dialects(self):
+        from mdedit import flavors
+
+        for key, drawn in (("mdedit", True), ("github", True),
+                           ("obsidian", True), ("confluence", False),
+                           ("vs", False), ("jekyll", False), ("hugo", False),
+                           ("chrome", False)):
+            fl = flavors.get(key)
+            node = P.parse(self.FENCE, fl.opts).children[0]
+            self.assertIsInstance(node, P.Diagram if drawn else P.CodeBlock, key)
+
+    def test_exported_page_stays_offline(self):
+        page = html_export.to_html(P.parse(self.FENCE))
+        self.assertNotIn("<script", page)
+        self.assertNotIn("mermaid.js", page)
+        self.assertEqual(page.count("http"), 2)     # the two svg namespaces
+
+
 class TestRobustness(unittest.TestCase):
     def test_empty_document(self):
         self.assertEqual(P.parse("").children, [])
@@ -863,7 +922,7 @@ class TestRobustness(unittest.TestCase):
     def test_samples_round_trip(self):
         from mdedit import samples
 
-        for text in (samples.WELCOME, samples.CHEATSHEET):
+        for text in (samples.WELCOME, samples.CHEATSHEET, samples.EMULATION):
             out = html_export.to_html(P.parse(text))
             self.assertIn("<body>", out)
 

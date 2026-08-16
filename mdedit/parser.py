@@ -7,7 +7,8 @@ Core syntax: ATX and setext headings, paragraphs, fenced and indented code
 blocks, block quotes (nested), ordered/unordered/task lists (nested),
 thematic breaks, pipe tables, and the usual inline constructs (emphasis,
 strong, strikethrough, code spans, links, images, autolinks, hard line
-breaks, backslash escapes and HTML entities).
+breaks, backslash escapes and HTML entities).  A ``mermaid`` fence is handed
+to :mod:`mermaid` and becomes a :class:`Diagram` when it can be read.
 
 Dialect differences between platforms are expressed as :class:`Options`; see
 ``flavors.py`` for the presets that emulate GitHub, Confluence and Visual
@@ -20,6 +21,8 @@ import html as _html
 import re
 from dataclasses import dataclass, field, replace
 from typing import List, Optional
+
+from . import mermaid
 
 # --------------------------------------------------------------------------
 # Dialect options
@@ -45,6 +48,7 @@ class Options:
     alerts: bool = True             # GitHub "> [!NOTE]" call-outs
     quote_panels: bool = False      # "> **Note:** ..." becomes a panel
     images: bool = True             # draw local images, or show the alt text
+    mermaid: bool = True            # ```mermaid fences become diagrams
     front_matter: bool = True       # --- YAML / +++ TOML header block
     callout_titles: bool = False    # "> [!note] A title" keeps the title
     wikilinks: bool = False         # [[Note]], [[Note|alias]], ![[embed]]
@@ -76,6 +80,8 @@ FEATURES = (
             "\"- [x] item\" gets a check box; off leaves the brackets."),
     Feature("images", "images", "Images",
             "Local PNG/GIF images are drawn; off shows the alt text."),
+    Feature("mermaid", "mermaid", "Mermaid diagrams",
+            "A ```mermaid fence is drawn as a diagram; off shows the source."),
     Feature("front_matter", "front-matter", "Front matter",
             "A leading --- or +++ header is metadata, not a rule and a "
             "heading."),
@@ -176,6 +182,20 @@ class Paragraph:
 class CodeBlock:
     text: str
     lang: str = ""
+
+
+@dataclass
+class Diagram:
+    """A ```mermaid fence whose contents were understood.
+
+    *model* is what :mod:`mermaid` made of the source -- a flowchart, a
+    sequence diagram or a class diagram.  A fence mermaid cannot read stays a
+    :class:`CodeBlock`, so this node always has something to draw.
+    """
+
+    source: str
+    kind: str = ""
+    model: object = None
 
 
 @dataclass
@@ -438,7 +458,7 @@ def _parse_blocks(lines: List[str], opts: Options = DEFAULT) -> List[object]:
         if stripped[:3] in ("```", "~~~"):
             m = _FENCE_RE.match(line)
             if m:
-                node, i = _parse_fence(lines, i, m)
+                node, i = _parse_fence(lines, i, m, opts)
                 blocks.append(node)
                 continue
 
@@ -571,7 +591,8 @@ def _parse_html_block(lines: List[str], i: int, opts: Options):
     return HtmlBlock(raw=raw, children=html_to_nodes(raw, opts)), i
 
 
-def _parse_fence(lines: List[str], i: int, m: re.Match) -> tuple:
+def _parse_fence(lines: List[str], i: int, m: re.Match,
+                 opts: Options = DEFAULT) -> tuple:
     pad, fence, lang = len(m.group(1)), m.group(2), m.group(3)
     char, size = fence[0], len(fence)
     i += 1
@@ -590,7 +611,12 @@ def _parse_fence(lines: List[str], i: int, m: re.Match) -> tuple:
     if not closed:  # ran to the end of the document
         while body and not body[-1].strip():
             body.pop()
-    return CodeBlock(text="\n".join(body), lang=lang.strip()), i
+    text, lang = "\n".join(body), lang.strip()
+    if opts.mermaid and lang.lower() == "mermaid":
+        model = mermaid.parse(text)
+        if model is not None:
+            return Diagram(source=text, kind=model.kind, model=model), i
+    return CodeBlock(text=text, lang=lang), i
 
 
 def _parse_container(lines: List[str], i: int, m: re.Match, opts: Options) -> tuple:

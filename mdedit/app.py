@@ -591,6 +591,7 @@ class MarkdownApp(tk.Tk):
         ins.add_command(label="Image", command=self.insert_image)
         ins.add_command(label="Code block", command=self.insert_code_block)
         ins.add_command(label="Table", command=self.insert_table)
+        ins.add_command(label="Mermaid diagram", command=self.insert_diagram)
         ins.add_command(label="Horizontal rule",
                         command=lambda: self.insert_block("\n---\n"))
         ins.add_command(label="Table of contents", command=self.insert_toc)
@@ -1354,6 +1355,16 @@ class MarkdownApp(tk.Tk):
         self.insert_block(f"```\n{body or ''}\n```\n")
         if not body:
             self.editor.mark_set("insert", "insert-5c")
+
+    def insert_diagram(self):
+        """A small flowchart to start from -- the commonest mermaid diagram."""
+        self.insert_block(
+            "\n```mermaid\nflowchart TD\n"
+            "    A[Start] --> B{Decision}\n"
+            "    B -->|yes| C[Do the thing]\n"
+            "    B -->|no| D[Stop]\n"
+            "```\n\n"
+        )
 
     def insert_table(self):
         self.insert_block(

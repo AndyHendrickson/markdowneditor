@@ -50,6 +50,19 @@ def fib(n):
     return a
 ```
 
+### Diagrams
+
+A ```` ```mermaid ```` fence is drawn as a picture -- flowcharts, sequence
+diagrams and class diagrams, laid out and painted here rather than fetched
+from anywhere:
+
+```mermaid
+flowchart LR
+    A[Type Markdown] --> B{Fence says<br/>mermaid?}
+    B -->|yes| C([Draw the diagram])
+    B -->|no| D[Show the code]
+```
+
 ### Tables
 
 | Feature      | Status | Notes                |
@@ -129,6 +142,7 @@ Chrome, which has never heard of it, shows a rule and a stray heading.
 | Template tags              |  off   |  off   |  off   | off |   off    |   on   |  on  |  off   |
 | Smart typography           |  off   |  off   |  off   | off |   off    |   on   |  on  |  off   |
 | Embedded HTML              |   on   |   on   |  off   | on  |    on    |   on   | off  |   on   |
+| ```mermaid``` diagrams     |   on   |   on   |  off   | off |    on    |  off   | off  |  off   |
 
 Any of these can be switched off on its own: *Emulate > Rendering features...*
 (`Ctrl+R`), or `--no-tables`, `--no-images` and friends on the command line.
@@ -192,6 +206,23 @@ no HTML macro, and Hugo needs `unsafe = true` before Goldmark will emit it.
 Anything that could fetch or run something -- `<script>`, `<iframe>`,
 `on*` handlers, `javascript:` links -- is dropped, in the preview and in
 exported HTML, so a page can never reach the network.
+
+## Diagrams
+
+A ```` ```mermaid ```` fence is a diagram where the platform draws one, and its own
+source where it does not. GitHub and Obsidian render mermaid; Confluence
+wants a macro, Jekyll and Hugo want a plugin or a shortcode, Visual Studio's
+Markdig has no such extension, and a browser showing a `.md` file has
+nothing to render it with -- so in those modes the fence stays a code block.
+
+```mermaid
+sequenceDiagram
+    actor A as Author
+    participant M as mdedit
+    A->>+M: ```mermaid fence
+    M-->>-A: a drawn diagram
+    Note over A,M: laid out here, not fetched
+```
 
 ## Line breaks
 
@@ -283,6 +314,27 @@ Indent four spaces for a code block without a fence.
     | a    |   b    |     c |
 
 The colons in the divider row set each column's alignment.
+
+## Diagrams
+
+A fenced block tagged `mermaid` is drawn instead of listed:
+
+    ```mermaid
+    flowchart TD
+        A[Start] --> B{Choose}
+        B -->|yes| C([Done])
+        B -->|no| A
+    ```
+
+Flowcharts (`flowchart` / `graph`, with `TD`, `LR`, `BT` or `RL`),
+`sequenceDiagram` and `classDiagram` are understood. Node shapes come from
+the brackets -- `[box]`, `(round)`, `([stadium])`, `[[subroutine]]`,
+`[(database)]`, `((circle))`, `{decision}`, `{{hexagon}}`, `[/slanted/]` --
+and links from the arrows: `-->`, `---`, `-.->`, `==>`, with a label as
+`-->|text|` or `-- text -->`.
+
+Any other diagram type stays a code block, as does any fence that cannot be
+read.
 
 ## Escapes
 

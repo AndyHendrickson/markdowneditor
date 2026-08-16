@@ -61,6 +61,7 @@ prints the lot):
 | `{{ template }}` markers | off | off | off | off | off | **on** | **on** | off |
 | Smart typography | off | off | off | off | off | **on** | **on** | off |
 | Embedded HTML renders | on | on | **off** | on | on | on | **off** | on |
+| ` ```mermaid ` drawn | on | on | **off** | **off** | on | **off** | **off** | **off** |
 
 Chrome renders no Markdown on its own — a `.md` file is plain text until an
 extension handles it — so that mode follows the usual one, [Markdown
@@ -99,8 +100,8 @@ python -m mdedit --list-features [--flavor confluence]
 Flags beat the mode; anything you leave out follows it. The full list, in the
 three groups the dialog uses:
 
-- **Structure** — `--tables`, `--task-lists`, `--images`, `--front-matter`,
-  `--hard-breaks`, `--html`
+- **Structure** — `--tables`, `--task-lists`, `--images`, `--mermaid`,
+  `--front-matter`, `--hard-breaks`, `--html`
 - **Inline** — `--strikethrough`, `--autolinks`, `--highlight`,
   `--smart-typography`, `--wikilinks`, `--hashtags`, `--template-tags`,
   `--comments`
@@ -117,8 +118,8 @@ three groups the dialog uses:
 - Formatting shortcuts that wrap the selection or toggle the line prefix:
   bold, italic, code, strikethrough, headings 1-6, bullet / numbered / task
   lists, block quotes.
-- Insert helpers for links, local images, code blocks, tables, rules and a
-  generated table of contents.
+- Insert helpers for links, local images, code blocks, tables, mermaid
+  diagrams, rules and a generated table of contents.
 - Lists, quotes and indentation continue automatically when you press Enter;
   an empty list item ends the list.
 - Document outline sidebar; clicking a heading jumps to it.
@@ -133,7 +134,7 @@ indented code blocks, nested block quotes, nested ordered/unordered/task
 lists, thematic breaks, pipe tables with per-column alignment, YAML and TOML
 front matter, call-out panels, emphasis, strong, strikethrough, highlight,
 code spans, links, autolinks, wiki links, tags, template markers, local
-images (PNG/GIF), backslash escapes and HTML entities.
+images (PNG/GIF), mermaid diagrams, backslash escapes and HTML entities.
 
 Tables are boxed in the preview, following the same mode as everything else:
 a frame with row and column dividers, drawn in the mode's own rule colour,
@@ -141,6 +142,44 @@ matching the borders its exported CSS puts on every cell. Visual Studio and
 Hugo clear those borders and keep a rule under each row instead, so that is
 what the preview draws for them. A cell too wide for its column wraps inside
 the box rather than pushing the grid out of line.
+
+**Diagrams**
+
+A fenced block tagged `mermaid` is drawn as a picture rather than listed as
+code — in the preview, on a `tk.Canvas`, and in exported HTML, as inline
+SVG. Both come from one layout pass, so the page and the preview are the
+same drawing twice. There is no mermaid.js and no renderer to download: the
+dialect is read, laid out and painted here, with the standard library.
+
+Three diagram types are understood.
+
+- **Flowcharts** — `flowchart` or `graph`, in `TD`/`TB`, `LR`, `BT` or `RL`.
+  Node shapes follow the brackets: `[box]`, `(round)`, `([stadium])`,
+  `[[subroutine]]`, `[(database)]`, `((circle))`, `(((double)))`,
+  `{decision}`, `{{hexagon}}`, `[/slanted/]`, `[\slanted\]`, `[/trapezoid\]`
+  and `>flag]`. Links come from the arrows — `-->`, `---`, `-.->`, `==>`,
+  ending `>`, `o` or `x` at either end — labelled either `-->|text|` or
+  `-- text -->`. `subgraph` blocks are boxed and titled, `A & B --> C`
+  fans out, and `A --> B --> C` chains.
+- **Sequence diagrams** — `participant` and `actor` (with `as` labels),
+  the arrow forms `->`, `-->`, `->>`, `-->>`, `-x`, `--x`, `-)` and `--)`,
+  `+`/`-` activations alongside `activate`/`deactivate`, `Note over` /
+  `left of` / `right of`, `loop`, `alt`/`else`, `opt`, `par`/`and`,
+  `critical`, `break`, `autonumber` and `title`.
+- **Class diagrams** — `class X { ... }` bodies or `X : +int y` lines split
+  into attributes and methods, `<<interface>>` stereotypes, `List~int~`
+  generics, cardinalities and labels, and the relationships `<|--`, `*--`,
+  `o--`, `-->`, `..>`, `..|>` and `--`, each with its own arrow end.
+
+Anything else — gantt, state, ER, pie, journey — stays a code block, as does
+a diagram whose syntax cannot be read, so a fence never disappears. Inside a
+diagram, a statement that isn't understood (styling, `click`, `classDef`) is
+skipped rather than losing the picture. Layout is a layered rank-and-order
+pass for flowcharts and class diagrams, and one top-to-bottom pass for
+sequence diagrams: a careful approximation of what mermaid draws, not a
+clone of it, and a big graph will be laid out more plainly than mermaid
+would lay it out. In the preview a diagram wider than the pane is scaled to
+fit; in exported HTML it scrolls.
 
 Clicking a link in the preview that points at a local Markdown file opens
 that file — a `[[wiki link]]` resolves the same way, to a note in the same
@@ -169,7 +208,9 @@ as plain text: Confluence Cloud has no HTML macro, and Hugo needs
 
 `File > Export HTML...` writes a standalone page with its own embedded CSS
 (light and dark aware) and no external references, so it renders correctly
-offline.
+offline. Diagrams go in as inline SVG, drawn twice — once in the light
+palette, once in the dark — with the CSS picking whichever matches the
+reader's colour scheme.
 
 ## Command line
 
@@ -207,6 +248,8 @@ convention rather than Windows's — with one exception: redo is `⇧⌘Z`, not
 mdedit.py              launcher
 mdedit/
   parser.py            Markdown source -> document tree
+  mermaid.py           mermaid source -> diagram model
+  diagram.py           diagram model -> shapes, and shapes -> SVG
   flavors.py           emulation modes: dialect + palette + CSS
   tkrender.py          document tree -> styled tkinter Text
   html_export.py       document tree -> standalone HTML
@@ -214,6 +257,7 @@ mdedit/
   cli.py               argument handling
   samples.py           welcome doc, cheat sheet, emulation demo
 tests/test_parser.py   parser / exporter tests
+tests/test_mermaid.py  mermaid parsing, layout and SVG tests
 ```
 
 `parser.py` is independent of tkinter, so it can be used on its own:
