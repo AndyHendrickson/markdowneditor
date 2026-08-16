@@ -61,7 +61,7 @@ prints the lot):
 | `{{ template }}` markers | off | off | off | off | off | **on** | **on** | off |
 | Smart typography | off | off | off | off | off | **on** | **on** | off |
 | Embedded HTML renders | on | on | **off** | on | on | on | **off** | on |
-| ` ```mermaid ` drawn | on | on | **off** | **off** | on | **off** | **off** | **off** |
+| ` mermaid ` drawn | on | on | **off** | **off** | on | **off** | **off** | **off** |
 
 Chrome renders no Markdown on its own — a `.md` file is plain text until an
 extension handles it — so that mode follows the usual one, [Markdown

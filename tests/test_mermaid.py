@@ -1,0 +1,386 @@
+"""Mermaid tests: source -> model, model -> scene, scene -> SVG.
+
+Run: python -m unittest discover tests
+"""
+
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from mdedit import diagram as D, mermaid as M  # noqa: E402
+
+
+def scene(src: str, theme: str = "light"):
+    model = M.parse(src)
+    assert model is not None, "source did not parse"
+    return D.render(model, D.style_for(theme))
+
+
+def texts(sc):
+    return [item.text for item in sc.items if isinstance(item, D.Text)]
+
+
+class TestDispatch(unittest.TestCase):
+    def test_known_kinds(self):
+        self.assertEqual(M.parse("graph TD\n A-->B\n").kind, "flowchart")
+        self.assertEqual(M.parse("flowchart LR\n A-->B\n").kind, "flowchart")
+        self.assertEqual(M.parse("sequenceDiagram\n A->>B: hi\n").kind,
+                         "sequence")
+        self.assertEqual(M.parse("classDiagram\n class A\n").kind, "class")
+
+    def test_unknown_kinds_decline(self):
+        for src in ("gantt\n title X\n", "erDiagram\n A ||--o{ B : has\n",
+                    "stateDiagram-v2\n [*] --> S\n", "pie\n \"a\" : 10\n",
+                    "", "   ", "not a diagram at all"):
+            self.assertIsNone(M.parse(src), src)
+
+    def test_empty_diagram_declines(self):
+        self.assertIsNone(M.parse("flowchart TD\n"))
+        self.assertIsNone(M.parse("classDiagram\n"))
+        self.assertIsNone(M.parse("sequenceDiagram\n"))
+
+    def test_comments_and_directives_ignored(self):
+        chart = M.parse("%%{init: {'theme':'dark'}}%%\ngraph TD\n"
+                        "  %% a comment\n  A-->B %% trailing\n")
+        self.assertEqual(list(chart.nodes), ["A", "B"])
+
+
+class TestFlowchartParsing(unittest.TestCase):
+    def test_direction(self):
+        for head, want in (("graph TD", "TB"), ("graph TB", "TB"),
+                           ("flowchart LR", "LR"), ("flowchart BT", "BT"),
+                           ("flowchart RL", "RL")):
+            self.assertEqual(M.parse(head + "\n A-->B\n").direction, want)
+
+    def test_default_direction(self):
+        self.assertEqual(M.parse("graph\n A-->B\n").direction, "TB")
+
+    def test_shapes(self):
+        chart = M.parse(
+            "flowchart LR\n"
+            "  a[rect] --> b(round) --> c([stadium]) --> d[[subroutine]]\n"
+            "  d --> e[(cylinder)] --> f((circle)) --> g{rhombus}\n"
+            "  g --> h{{hexagon}} --> i[/para/] --> j[\\para2\\]\n"
+            "  j --> k[/trap\\] --> l[\\trap2/] --> m>flag] --> n(((dbl)))\n")
+        got = {nid: node.shape for nid, node in chart.nodes.items()}
+        self.assertEqual(got, {
+            "a": "rect", "b": "round", "c": "stadium", "d": "subroutine",
+            "e": "cylinder", "f": "circle", "g": "rhombus", "h": "hexagon",
+            "i": "parallelogram", "j": "parallelogram_alt", "k": "trapezoid",
+            "l": "trapezoid_alt", "m": "asymmetric", "n": "doublecircle",
+        })
+
+    def test_labels(self):
+        chart = M.parse('graph TD\n A["quoted &amp; escaped"] --> '
+                        'B[two<br/>lines]\n C[#quot;hash#quot;]\n')
+        self.assertEqual(chart.nodes["A"].text, "quoted & escaped")
+        self.assertEqual(chart.nodes["B"].text, "two\nlines")
+        self.assertEqual(chart.nodes["C"].text, '"hash"')
+
+    def test_unlabelled_node_shows_its_id(self):
+        self.assertEqual(M.parse("graph TD\n A --> B\n").nodes["A"].text, "A")
+
+    def test_link_styles(self):
+        chart = M.parse("graph LR\n A --> B\n B --- C\n C -.-> D\n"
+                        "  D ==> E\n E ---- F\n")
+        self.assertEqual([e.stroke for e in chart.edges],
+                         ["solid", "solid", "dotted", "thick", "solid"])
+        self.assertEqual([e.dst_head for e in chart.edges],
+                         ["arrow", "", "arrow", "arrow", ""])
+
+    def test_link_labels(self):
+        chart = M.parse("graph LR\n A -->|pipe| B\n B -- middle --> C\n"
+                        "  C -. dotted .-> D\n D == thick ==> E\n")
+        self.assertEqual([e.text for e in chart.edges],
+                         ["pipe", "middle", "dotted", "thick"])
+
+    def test_arrow_ends(self):
+        chart = M.parse("graph LR\n A <--> B\n B --o C\n C --x D\n")
+        self.assertEqual([(e.src_head, e.dst_head) for e in chart.edges],
+                         [("arrow", "arrow"), ("", "circle"), ("", "cross")])
+
+    def test_chains_and_ampersand(self):
+        chart = M.parse("graph LR\n A --> B --> C\n D & E --> F\n")
+        pairs = [(e.src, e.dst) for e in chart.edges]
+        self.assertEqual(pairs, [("A", "B"), ("B", "C"), ("D", "F"), ("E", "F")])
+
+    def test_ids_with_dashes_in_labels_do_not_split(self):
+        chart = M.parse("graph LR\n A[a -- b] --> B\n")
+        self.assertEqual(chart.nodes["A"].text, "a -- b")
+        self.assertEqual([(e.src, e.dst) for e in chart.edges], [("A", "B")])
+
+    def test_semicolons_separate_statements(self):
+        chart = M.parse("graph TD; A-->B; B-->C;\n")
+        self.assertEqual(len(chart.edges), 2)
+
+    def test_subgraphs(self):
+        chart = M.parse("flowchart TB\n"
+                        "  subgraph one [First]\n    A --> B\n  end\n"
+                        "  subgraph two\n    C\n  end\n  B --> C\n")
+        first, second = chart.subgraphs
+        self.assertEqual((first.id, first.title), ("one", "First"))
+        self.assertEqual(first.members, ["A", "B"])
+        self.assertEqual((second.id, second.members), ("two", ["C"]))
+
+    def test_nested_subgraph_is_a_member_of_its_parent(self):
+        chart = M.parse("flowchart TB\n subgraph outer\n  subgraph inner\n"
+                        "   A\n  end\n end\n")
+        outer = [s for s in chart.subgraphs if s.id == "outer"][0]
+        self.assertIn("inner", outer.members)
+
+    def test_link_naming_a_subgraph_reaches_inside_it(self):
+        chart = M.parse("flowchart LR\n subgraph one\n  a1-->a2\n end\n"
+                        " subgraph two\n  b1-->b2\n end\n one --> two\n")
+        self.assertEqual(list(chart.nodes), ["a1", "a2", "b1", "b2"])
+        self.assertIn(("a1", "b1"), [(e.src, e.dst) for e in chart.edges])
+
+    def test_styling_statements_are_skipped(self):
+        chart = M.parse("graph TD\n A-->B\n style A fill:#f9f\n"
+                        "  classDef big font-size:20px\n class A big\n"
+                        "  click A href \"https://example.com\"\n"
+                        "  linkStyle 0 stroke:red\n")
+        self.assertEqual(list(chart.nodes), ["A", "B"])
+        self.assertEqual(len(chart.edges), 1)
+
+    def test_self_link(self):
+        chart = M.parse("graph TD\n A --> A\n")
+        self.assertEqual([(e.src, e.dst) for e in chart.edges], [("A", "A")])
+
+
+class TestSequenceParsing(unittest.TestCase):
+    def test_participants_and_labels(self):
+        seq = M.parse("sequenceDiagram\n participant A as Alice\n actor B\n"
+                      " A->>B: hi\n")
+        self.assertEqual(seq.participants["A"].label, "Alice")
+        self.assertTrue(seq.participants["B"].actor)
+
+    def test_participants_appear_in_first_seen_order(self):
+        seq = M.parse("sequenceDiagram\n C->>A: x\n B->>C: y\n")
+        self.assertEqual(list(seq.participants), ["C", "A", "B"])
+
+    def test_arrow_styles(self):
+        seq = M.parse("sequenceDiagram\n A->B: a\n A-->B: b\n A->>B: c\n"
+                      " A-->>B: d\n A-xB: e\n A--)B: f\n")
+        self.assertEqual([(m.stroke, m.head) for m in seq.events], [
+            ("solid", ""), ("dotted", ""), ("solid", "arrow"),
+            ("dotted", "arrow"), ("solid", "cross"), ("dotted", "async"),
+        ])
+
+    def test_activation_flags(self):
+        seq = M.parse("sequenceDiagram\n A->>+B: go\n B-->>-A: done\n")
+        self.assertTrue(seq.events[0].activate)
+        self.assertTrue(seq.events[1].deactivate)
+        self.assertEqual(list(seq.participants), ["A", "B"])
+
+    def test_dashed_name_is_not_part_of_the_arrow(self):
+        seq = M.parse("sequenceDiagram\n Web-Server->>DB: query\n")
+        self.assertEqual((seq.events[0].src, seq.events[0].dst),
+                         ("Web-Server", "DB"))
+
+    def test_blocks_nest(self):
+        seq = M.parse("sequenceDiagram\n A->>B: x\n loop daily\n  A->>B: y\n"
+                      "  alt ok\n   B->>A: z\n  else no\n   B->>A: w\n  end\n"
+                      " end\n")
+        loop = seq.events[1]
+        self.assertEqual((loop.kind, loop.title), ("loop", "daily"))
+        inner = [e for e in loop.events if isinstance(e, M.Block)][0]
+        self.assertEqual(inner.sections, ["no"])
+
+    def test_unclosed_block_still_lands(self):
+        seq = M.parse("sequenceDiagram\n loop forever\n  A->>B: x\n")
+        self.assertIsInstance(seq.events[0], M.Block)
+        self.assertEqual(len(seq.events[0].events), 1)
+
+    def test_notes(self):
+        seq = M.parse("sequenceDiagram\n A->>B: x\n Note over A,B: shared\n"
+                      " Note left of A: mine\n")
+        over, left = seq.events[1], seq.events[2]
+        self.assertEqual((over.placement, over.targets), ("over", ["A", "B"]))
+        self.assertEqual((left.placement, left.text), ("left", "mine"))
+
+    def test_title_and_autonumber(self):
+        seq = M.parse("sequenceDiagram\n title A chat\n autonumber\n"
+                      " A->>B: x\n")
+        self.assertEqual(seq.title, "A chat")
+        self.assertTrue(seq.autonumber)
+
+
+class TestClassParsing(unittest.TestCase):
+    def test_body_members_split_into_fields_and_methods(self):
+        dia = M.parse("classDiagram\n class Animal {\n  +int age\n"
+                      "  +String name\n  +isMammal() bool\n }\n")
+        box = dia.classes["Animal"]
+        self.assertEqual(box.attributes, ["+int age", "+String name"])
+        self.assertEqual(box.methods, ["+isMammal() bool"])
+
+    def test_colon_members(self):
+        dia = M.parse("classDiagram\n Animal : +int age\n Animal : +run() void\n")
+        box = dia.classes["Animal"]
+        self.assertEqual((box.attributes, box.methods),
+                         (["+int age"], ["+run() void"]))
+
+    def test_stereotype(self):
+        inline = M.parse("classDiagram\n class F {\n <<interface>>\n"
+                         " +fly() void\n }\n")
+        outside = M.parse("classDiagram\n class F\n <<interface>> F\n")
+        self.assertEqual(inline.classes["F"].stereotype, "interface")
+        self.assertEqual(outside.classes["F"].stereotype, "interface")
+
+    def test_relations(self):
+        dia = M.parse("classDiagram\n A <|-- B\n C *-- D\n E o-- F\n"
+                      " G --> H\n I ..> J\n K ..|> L\n M -- N\n")
+        got = [(r.left_head, r.right_head, r.line) for r in dia.relations]
+        self.assertEqual(got, [
+            ("triangle", "", "solid"), ("diamond", "", "solid"),
+            ("odiamond", "", "solid"), ("", "arrow", "solid"),
+            ("", "arrow", "dashed"), ("", "triangle", "dashed"),
+            ("", "", "solid"),
+        ])
+
+    def test_cardinality_and_label(self):
+        dia = M.parse('classDiagram\n Duck "1" --> "*" Egg : lays\n')
+        rel = dia.relations[0]
+        self.assertEqual((rel.left_card, rel.right_card, rel.text),
+                         ("1", "*", "lays"))
+
+    def test_generics(self):
+        dia = M.parse("classDiagram\n class List~int~\n")
+        self.assertEqual(dia.classes["List~int~"].name, "List<int>")
+
+    def test_direction(self):
+        self.assertEqual(M.parse("classDiagram\n direction LR\n class A\n"
+                                 ).direction, "LR")
+
+
+class TestLayout(unittest.TestCase):
+    def test_flowchart_scene_has_shapes_and_labels(self):
+        sc = scene("flowchart TD\n A[Start] --> B{Choose}\n B -->|yes| C\n")
+        self.assertGreater(sc.width, 0)
+        self.assertGreater(sc.height, 0)
+        self.assertIn("Start", texts(sc))
+        self.assertIn("yes", texts(sc))
+
+    def test_nothing_is_drawn_outside_the_scene(self):
+        sc = scene("flowchart LR\n subgraph s [Box]\n A --> B\n end\n"
+                   " B --> C{Wide decision label here}\n C -.no.-> A\n")
+        for item in sc.items:
+            for x, y in D._extent(item, D.Style()):
+                self.assertGreaterEqual(x, -1.0)
+                self.assertGreaterEqual(y, -1.0)
+                self.assertLessEqual(x, sc.width + 1.0)
+                self.assertLessEqual(y, sc.height + 1.0)
+
+    def test_boxes_do_not_overlap(self):
+        sc = scene("flowchart TD\n A[One] --> B[Two]\n A --> C[Three]\n"
+                   " B --> D[Four]\n C --> D\n")
+        boxes = [i for i in sc.items if isinstance(i, D.Rect) and i.fill]
+        for k, a in enumerate(boxes):
+            for b in boxes[k + 1:]:
+                apart = (a.x + a.w <= b.x + 0.5 or b.x + b.w <= a.x + 0.5
+                         or a.y + a.h <= b.y + 0.5 or b.y + b.h <= a.y + 0.5)
+                self.assertTrue(apart, f"{a} overlaps {b}")
+
+    def test_direction_changes_the_aspect(self):
+        src = " A[One] --> B[Two] --> C[Three]\n"
+        down = scene("flowchart TD\n" + src)
+        across = scene("flowchart LR\n" + src)
+        self.assertGreater(down.height, down.width)
+        self.assertGreater(across.width, across.height)
+
+    def test_cycles_do_not_hang(self):
+        sc = scene("flowchart TD\n A --> B\n B --> C\n C --> A\n A --> A\n")
+        self.assertGreater(len(sc.items), 0)
+
+    def test_sequence_scene(self):
+        sc = scene("sequenceDiagram\n actor U\n participant S\n"
+                   " U->>+S: ask\n S-->>-U: answer\n loop twice\n U->>S: x\n"
+                   " end\n Note over U,S: done\n")
+        labels = texts(sc)
+        for want in ("U", "S", "ask", "answer", "loop", "done"):
+            self.assertIn(want, labels)
+
+    def test_class_scene(self):
+        sc = scene("classDiagram\n class A {\n +int x\n +go() void\n }\n"
+                   " A <|-- B\n")
+        labels = texts(sc)
+        self.assertIn("A", labels)
+        self.assertIn("+int x", labels)
+        self.assertIn("+go() void", labels)
+
+    def test_measure_hook_is_used(self):
+        calls = []
+
+        def measure(text, size, bold):
+            calls.append(text)
+            return len(text) * size * 0.5
+
+        model = M.parse("flowchart TD\n A[Some words] --> B\n")
+        D.render(model, D.Style(measure=measure))
+        self.assertIn("Some words", calls)
+
+    def test_bigger_type_makes_a_bigger_picture(self):
+        model = M.parse("flowchart TD\n A[Start] --> B[End]\n")
+        small = D.render(model, D.Style(size=10))
+        large = D.render(model, D.Style(size=20))
+        self.assertGreater(large.width, small.width)
+        self.assertGreater(large.height, small.height)
+
+    def test_palettes_differ(self):
+        light = scene("flowchart TD\n A --> B\n", "light")
+        dark = scene("flowchart TD\n A --> B\n", "dark")
+        fills = lambda sc: {i.fill for i in sc.items if isinstance(i, D.Rect)}
+        self.assertNotEqual(fills(light), fills(dark))
+
+
+class TestSvg(unittest.TestCase):
+    def test_svg_shape(self):
+        svg = D.to_svg(scene("flowchart TD\n A[Start] --> B((End))\n"), "flow")
+        self.assertTrue(svg.startswith("<svg"))
+        self.assertTrue(svg.rstrip().endswith("</svg>"))
+        self.assertIn("viewBox=", svg)
+        self.assertIn("<rect", svg)
+        self.assertIn("<ellipse", svg)
+        self.assertIn("<polygon", svg)          # the arrow head
+        self.assertIn(">Start</text>", svg)
+
+    def test_svg_escapes_text(self):
+        svg = D.to_svg(scene('flowchart TD\n A["a < b & c"] --> B\n'))
+        self.assertIn("a &lt; b &amp; c", svg)
+        self.assertNotIn("<b &", svg)
+
+    def test_svg_has_no_external_references(self):
+        svg = D.to_svg(scene("sequenceDiagram\n A->>B: hi\n"))
+        for banned in ("<script", "<image", "href", "src=", "url(", "@import"):
+            self.assertNotIn(banned, svg)
+        # The one URL allowed is the SVG namespace, which is never fetched.
+        self.assertEqual(svg.count("http"), 1)
+        self.assertIn('xmlns="http://www.w3.org/2000/svg"', svg)
+
+
+class TestRobustness(unittest.TestCase):
+    def test_odd_input_does_not_raise(self):
+        for src in ("flowchart TD\n" + "A --> " * 200 + "B\n",
+                    "flowchart TD\n A[" + "x" * 500 + "] --> B\n",
+                    "flowchart TD\n A[unclosed --> B\n",
+                    "flowchart TD\n --> \n A\n",
+                    "flowchart TD\n A --> B\n subgraph s\n" * 20 + " end\n",
+                    "sequenceDiagram\n A->>B\n B: no arrow\n",
+                    "sequenceDiagram\n" + " end\n" * 10 + " A->>B: x\n",
+                    "classDiagram\n class {\n }\n A <|-- \n",
+                    "classDiagram\n A <|-- B\n B <|-- A\n"):
+            model = M.parse(src)
+            if model is not None:
+                D.render(model, D.Style())      # must not hang or raise
+
+    def test_long_chain_stays_sane(self):
+        src = "flowchart TD\n" + "\n".join(
+            f" N{k} --> N{k + 1}" for k in range(60))
+        sc = scene(src)
+        self.assertLess(sc.width, 4000)
+        self.assertGreater(sc.height, 1000)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
