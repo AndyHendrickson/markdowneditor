@@ -3,6 +3,7 @@
 Run: python -m unittest discover tests
 """
 
+import math
 import os
 import sys
 import unittest
@@ -20,6 +21,88 @@ def scene(src: str, theme: str = "light"):
 
 def texts(sc):
     return [item.text for item in sc.items if isinstance(item, D.Text)]
+
+
+def layout(src: str, theme: str = "light"):
+    """A flowchart's model and the layout chosen for it.
+
+    The same setup ``_flowchart_scene`` does, stopping at the layout: the
+    routes it picked are what the tidiness tests are about, and they are
+    gone by the time the scene is a bag of lines.
+    """
+    chart = M.parse(src)
+    assert chart is not None and chart.kind == "flowchart", "not a flowchart"
+    style = D.style_for(theme)
+    ids = list(chart.nodes)
+    sizes = {n: D._node_size(style.lines(chart.nodes[n].text or n),
+                             chart.nodes[n].shape, style) for n in ids}
+    links = [(e.src, e.dst) for e in chart.edges]
+    clusters = [(g.id, g.members) for g in chart.subgraphs if g.members]
+    captions = {k: D._caption_size(e.text, style)
+                for k, e in enumerate(chart.edges) if e.text}
+    return chart, D._graph_layout(ids, sizes, links, chart.direction, style,
+                                  clusters, captions)
+
+
+#: A real dependency graph, and the shape that drove the layout work: a
+#: deep spine with edges jumping most of it, and a box on every rank
+#: competing for the room those edges need.
+DEPENDENCIES = """flowchart TD
+ Buffers --> Foundation
+ EnumReflection --> Buffers
+ SerialHelpers --> Buffers
+ Debugging --> SerialHelpers
+ SimpleLogger --> Buffers
+ DataUtilities --> Debugging
+ DataUtilities --> SimpleLogger
+ FileSystem --> SimpleLogger
+ Profiler --> Foundation
+ Strings --> DataUtilities
+ Threading --> Foundation
+ NameMap --> FileSystem
+ NameMap --> Profiler
+ NameMap --> Strings
+ NameMap --> Threading
+ Logging --> NameMap
+ Serialization --> Debugging
+ Serialization --> SimpleLogger
+ Math --> DataUtilities
+ Math --> FileSystem
+ Math --> Serialization
+ CommandLine --> Logging
+ ImageLoader --> Logging
+ App --> CommandLine
+ App --> EnumReflection
+ App --> ImageLoader
+ App --> Math
+"""
+
+
+def bends(routes) -> int:
+    """How many visible corners the routes turn through."""
+    count = 0
+    for route in routes:
+        for a, b, c in zip(route, route[1:], route[2:]):
+            first = (b[0] - a[0], b[1] - a[1])
+            second = (c[0] - b[0], c[1] - b[1])
+            n1, n2 = math.hypot(*first), math.hypot(*second)
+            if n1 < 1e-6 or n2 < 1e-6:
+                continue
+            cos = (first[0] * second[0] + first[1] * second[1]) / (n1 * n2)
+            if math.degrees(math.acos(max(-1.0, min(1.0, cos)))) > 8:
+                count += 1
+    return count
+
+
+def wander(routes) -> float:
+    """How much longer the routes are than a straight line would be."""
+    total = straight = 0.0
+    for route in routes:
+        if len(route) < 2:
+            continue
+        total += sum(math.dist(a, b) for a, b in zip(route, route[1:]))
+        straight += math.dist(route[0], route[-1])
+    return total / straight if straight else 1.0
 
 
 class TestDispatch(unittest.TestCase):
@@ -392,6 +475,57 @@ class TestLayout(unittest.TestCase):
         dark = scene("flowchart TD\n A --> B\n", "dark")
         fills = lambda sc: {i.fill for i in sc.items if isinstance(i, D.Rect)}
         self.assertNotEqual(fills(light), fills(dark))
+
+
+class TestLayoutTidiness(unittest.TestCase):
+    """A long edge goes straight, a rank gets ordered, and nothing is spent
+    on half-ranks that no caption is ever going to use."""
+
+    def test_a_long_edge_is_drawn_straight(self):
+        # A --> E runs past the four ranks the spine occupies.  Every rank
+        # it crosses has a box on it wanting the same room, and the edge is
+        # what has to win, or it comes out as a staircase.
+        _, lay = layout("flowchart TD\n A --> B\n B --> C\n C --> D\n"
+                        " D --> E\n A --> E\n")
+        route = lay.routes[4]
+        self.assertGreater(len(route), 2)           # it does cross ranks
+        self.assertLess(sum(math.dist(a, b) for a, b in zip(route, route[1:])),
+                        math.dist(route[0], route[-1]) * 1.02)
+
+    def test_a_real_dependency_graph_stays_tidy(self):
+        # Before the layout ranked its invisible nodes above the boxes this
+        # came out at 1.58 and 62 corners: a cloud of wandering lines.
+        _, lay = layout(DEPENDENCIES)
+        self.assertLess(wander(lay.routes), 1.25)
+        self.assertLess(bends(lay.routes), 25)
+
+    def test_a_tidy_graph_is_a_narrow_one(self):
+        # The wandering was width: the lines swung out to the right and the
+        # picture had to grow to hold them.
+        _, lay = layout(DEPENDENCIES)
+        self.assertLess(lay.width, lay.height)
+
+    def test_no_half_rank_when_no_caption_wants_one(self):
+        _, lay = layout("flowchart TD\n A --> B\n")
+        self.assertEqual(len(lay.routes[0]), 2)     # straight from A to B
+
+    def test_a_caption_still_gets_a_rank_of_its_own(self):
+        _, lay = layout("flowchart TD\n A -->|why| B\n")
+        self.assertEqual(len(lay.routes[0]), 3)     # A, the caption, B
+        self.assertIn(0, lay.captions)
+
+    def test_counting_crossings_between_two_ranks(self):
+        adj = {"a": ("p",), "b": ("q",), "p": ("a",), "q": ("b",)}
+        self.assertEqual(D._between(["a", "b"], ["p", "q"], adj.get), 0)
+        self.assertEqual(D._between(["a", "b"], ["q", "p"], adj.get), 1)
+
+    def test_transpose_undoes_a_crossing_the_median_cannot_see(self):
+        adj = {"a": ("p",), "b": ("q",), "p": ("a",), "q": ("b",)}
+        layers = {0: ["a", "b"], 1: ["q", "p"]}
+        self.assertEqual(D._crossings(layers, [0, 1], adj.get), 1)
+        D._transpose(layers, [0, 1], adj.get)
+        self.assertEqual(D._crossings(layers, [0, 1], adj.get), 0)
+
 
 
 class TestSvg(unittest.TestCase):

@@ -293,10 +293,57 @@ def _rank_nodes(ids: List[str], links: List[tuple]) -> Dict[str, int]:
     return rank
 
 
+def _between(upper: List[str], lower: List[str], neighbours) -> int:
+    """How many edges cross in the band between two neighbouring ranks."""
+    spot = {n: i for i, n in enumerate(lower)}
+    seq: List[int] = []
+    for node in upper:
+        seq.extend(sorted(spot[m] for m in neighbours(node) if m in spot))
+    return sum(1 for i, a in enumerate(seq) for b in seq[i + 1:] if a > b)
+
+
+def _crossings(layers: Dict[int, List[str]], ranks, neighbours) -> int:
+    return sum(_between(layers[a], layers[b], neighbours)
+               for a, b in zip(ranks, ranks[1:]))
+
+
+def _transpose(layers: Dict[int, List[str]], ranks, neighbours,
+               rounds: int = 4):
+    """Swap neighbours within a rank while doing so removes a crossing.
+
+    The median pass gets each rank roughly right but cannot tell two nodes
+    with the same median apart, so it leaves such pairs in whatever order it
+    found them.  This is what settles them.
+    """
+    def band(r: int) -> int:
+        total = 0
+        for other in (r - 1, r + 1):
+            if other in layers:
+                above, below = (other, r) if other < r else (r, other)
+                total += _between(layers[above], layers[below], neighbours)
+        return total
+
+    for _ in range(rounds):
+        moved = False
+        for r in ranks:
+            row = layers[r]
+            for i in range(len(row) - 1):
+                before = band(r)
+                row[i], row[i + 1] = row[i + 1], row[i]
+                if band(r) < before:
+                    moved = True
+                else:
+                    row[i], row[i + 1] = row[i + 1], row[i]
+        if not moved:
+            break
+
+
 def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
-                  passes: int = 4):
+                  passes: int = 8):
     """Cut down crossings: sort each rank by where its neighbours sit."""
     ranks = sorted(layers)
+    best = {r: list(layers[r]) for r in ranks}
+    best_score = _crossings(layers, ranks, neighbours)
     for step in range(passes):
         sweep = ranks[1:] if step % 2 == 0 else ranks[-2::-1]
         other = -1 if step % 2 == 0 else 1
@@ -317,6 +364,16 @@ def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
 
             layers[r].sort(key=key)
 
+        # A sweep can end worse than it started, so keep the best
+        # arrangement seen rather than whichever one came last.
+        _transpose(layers, ranks, neighbours)
+        score = _crossings(layers, ranks, neighbours)
+        if score < best_score:
+            best_score = score
+            best = {r: list(layers[r]) for r in ranks}
+    for r in ranks:
+        layers[r][:] = best[r]
+
     if not cluster_of:
         return
     # Keep the members of a subgraph together, so its box does not have to
@@ -335,8 +392,73 @@ def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
                                       spots[n]))
 
 
+def _priority_place(order, want, size, gaps, pos, priority):
+    """Give each node what it wants, best-ranked first.
+
+    A node is only ever shoved aside by one that outranks it.  That is what
+    keeps a long edge's run of invisible nodes on one straight line: without
+    it the boxes on every rank the edge crosses each nudge it a little
+    further off, and what should be a straight line comes out as a wander.
+    """
+    n = len(order)
+    rung = {node: priority(node) for node in order}
+
+    def left_edge(i):
+        return pos[order[i]] - size[order[i]] / 2
+
+    def right_edge(i):
+        return pos[order[i]] + size[order[i]] / 2
+
+    for i in sorted(range(n), key=lambda k: (-rung[order[k]], k)):
+        node = order[i]
+        target = want.get(node)
+        if target is None:
+            continue
+        mine = rung[node]
+
+        # How far it may go before it would have to move its betters: walk
+        # back from the first node that outranks it, subtracting what has to
+        # fit in between.
+        stop = next((j for j in range(i + 1, n) if rung[order[j]] >= mine), n)
+        if stop < n:
+            x = left_edge(stop)
+            for j in range(stop - 1, i, -1):
+                x -= gaps[j + 1] + size[order[j]]
+            high = x - gaps[i + 1] - size[node] / 2
+        else:
+            high = 1e9
+        stop = next((j for j in range(i - 1, -1, -1)
+                     if rung[order[j]] >= mine), -1)
+        if stop >= 0:
+            x = right_edge(stop)
+            for j in range(stop + 1, i):
+                x += gaps[j] + size[order[j]]
+            low = x + gaps[i] + size[node] / 2
+        else:
+            low = -1e9
+        if low > high:              # no room to move at all
+            continue
+        pos[node] = min(max(target, low), high)
+
+        edge = pos[node] + size[node] / 2       # and take the room it needs
+        for j in range(i + 1, n):
+            need = edge + gaps[j] + size[order[j]] / 2
+            if pos[order[j]] >= need:
+                break
+            pos[order[j]] = need
+            edge = need + size[order[j]] / 2
+        edge = pos[node] - size[node] / 2
+        for j in range(i - 1, -1, -1):
+            need = edge - gaps[j + 1] - size[order[j]] / 2
+            if pos[order[j]] <= need:
+                break
+            pos[order[j]] = need
+            edge = need - size[order[j]] / 2
+    return pos
+
+
 def _place(order: List[str], want: Dict[str, float], size: Dict[str, float],
-           gap: float, extra=None) -> Dict[str, float]:
+           gap: float, extra=None, priority=None) -> Dict[str, float]:
     """Positions as near *want* as the sizes and *gap* allow, in order.
 
     *extra* asks for more room between one particular pair than the standard
@@ -354,6 +476,8 @@ def _place(order: List[str], want: Dict[str, float], size: Dict[str, float],
         floor = edge + (gaps[i] if i else gap) + half
         pos[node] = max(want.get(node, floor), floor)
         edge = pos[node] + half
+    if priority is not None:
+        return _priority_place(order, want, size, gaps, pos, priority)
     # Pull back to the left wherever there is slack, so a rank that was
     # pushed right by one wide node does not drag the rest along with it.
     edge = 1e9
@@ -390,11 +514,14 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
     """
     horizontal = direction in ("LR", "RL")
     gap_cross = style.size * 1.8
-    # Ranks are counted in halves, so every link has a rank of its own to put
-    # a caption on, and the empty half-ranks cost nothing.
-    gap_rank = style.size * (2.0 if horizontal else 1.5)
-    dummy_cross = style.size * 0.9
     labels = labels or {}
+    # Ranks are counted in halves only when something needs the half: a
+    # caption rides on the rank between its link's two ends.  With no
+    # captions to place, the empty half-ranks buy nothing and cost every
+    # link an invisible node, which is one more place for it to kink.
+    halves = 2 if labels else 1
+    gap_rank = style.size * (2.0 if horizontal else 1.5) * (3 - halves)
+    dummy_cross = style.size * 0.9
 
     def cross_size(nid):
         w, h = sizes[nid]
@@ -404,7 +531,7 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
         w, h = sizes[nid]
         return w if horizontal else h
 
-    rank = {n: 2 * r for n, r in _rank_nodes(ids, links).items()}
+    rank = {n: halves * r for n, r in _rank_nodes(ids, links).items()}
 
     # Chains: a link travels as an invisible node on every rank it crosses,
     # which is what keeps a long one from cutting through the boxes in
@@ -491,6 +618,12 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
     # the obvious way to write this -- lets a long chain lag by a little on
     # every rank, and a diagram that should be one column comes out as a
     # wide diagonal staircase.
+    # An invisible node outranks every real box: one long edge drawn
+    # straight is worth more than any single box sitting exactly on the
+    # average of its neighbours.
+    def rung(node):
+        return 1000 if node in dummies else len(adjacent.get(node, ()))
+
     for step in range(8):
         ranks = sorted(layers)
         sweep = ranks if step % 2 == 0 else ranks[::-1]
@@ -501,7 +634,8 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
                         if n in cross and _rank_of(n, rank, dummies) != r]
                 if near:
                     want[node] = sum(near) / len(near)
-            cross.update(_place(layers[r], want, span, gap_cross, apart))
+            cross.update(_place(layers[r], want, span, gap_cross, apart,
+                                priority=rung))
 
     # The rank axis: each rank sits below (or right of) the deepest node on
     # the one before it.
