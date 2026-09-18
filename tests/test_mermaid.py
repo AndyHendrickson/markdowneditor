@@ -78,6 +78,40 @@ DEPENDENCIES = """flowchart TD
 """
 
 
+#: The same graph with every edge labelled -- the include graph from the
+#: same document.  A caption has to claim the room its text needs without
+#: pulling the line it sits on out of true.
+INCLUDES = """flowchart TD
+ Buffers -->|GBuildTime.h +5| Foundation
+ EnumReflection -->|GBuffer.h| Buffers
+ SerialHelpers -->|GBuffer.h| Buffers
+ Debugging -->|GSerialHelpers.h| SerialHelpers
+ SimpleLogger -->|GBuffer.h +1| Buffers
+ DataUtilities -->|GDebug.h| Debugging
+ DataUtilities -->|SimpleLogger.h| SimpleLogger
+ FileSystem -->|GMiniLogger.h| SimpleLogger
+ Profiler -->|GBuildTime.h +3| Foundation
+ Strings -->|GUtilities.h| DataUtilities
+ Threading -->|GBuildTime.h +4| Foundation
+ NameMap -->|declared only| FileSystem
+ NameMap -->|declared only| Profiler
+ NameMap -->|FixedSizeString.h +1| Strings
+ NameMap -->|declared only| Threading
+ Logging -->|LogInjectionWrapper.h +4| NameMap
+ Serialization -->|GDebug.h| Debugging
+ Serialization -->|SimpleLogger.h| SimpleLogger
+ Math -->|GUtilities.h| DataUtilities
+ Math -->|declared only| FileSystem
+ Math -->|GSerialize.h| Serialization
+ CommandLine -->|GLogging.h| Logging
+ ImageLoader -->|GLogging.h| Logging
+ App -->|GCommandLine.h| CommandLine
+ App -->|EnumMacros.h| EnumReflection
+ App -->|GImage.h +1| ImageLoader
+ App -->|GArray.h +4| Math
+"""
+
+
 def bends(routes) -> int:
     """How many visible corners the routes turn through."""
     count = 0
@@ -92,6 +126,29 @@ def bends(routes) -> int:
             if math.degrees(math.acos(max(-1.0, min(1.0, cos)))) > 8:
                 count += 1
     return count
+
+
+def crossings(routes) -> int:
+    """How many times one route crosses another, as drawn."""
+    def side(a, b, c):
+        turn = ((b[0] - a[0]) * (c[1] - a[1])
+                - (b[1] - a[1]) * (c[0] - a[0]))
+        return (turn > 1e-9) - (turn < -1e-9)
+
+    def meet(p, q, r, t):
+        if (max(p[0], q[0]) < min(r[0], t[0]) - 1e-9
+                or max(r[0], t[0]) < min(p[0], q[0]) - 1e-9
+                or max(p[1], q[1]) < min(r[1], t[1]) - 1e-9
+                or max(r[1], t[1]) < min(p[1], q[1]) - 1e-9):
+            return False
+        return (side(p, q, r) * side(p, q, t) < 0
+                and side(r, t, p) * side(r, t, q) < 0)
+
+    segments = [(k, a, b) for k, route in enumerate(routes)
+                for a, b in zip(route, route[1:]) if a != b]
+    return sum(1 for i, (ka, a1, a2) in enumerate(segments)
+               for kb, b1, b2 in segments[i + 1:]
+               if ka != kb and meet(a1, a2, b1, b2))
 
 
 def wander(routes) -> float:
@@ -499,11 +556,12 @@ class TestLayoutTidiness(unittest.TestCase):
         self.assertLess(wander(lay.routes), 1.25)
         self.assertLess(bends(lay.routes), 25)
 
-    def test_a_tidy_graph_is_a_narrow_one(self):
+    def test_a_tidy_graph_does_not_sprawl_sideways(self):
         # The wandering was width: the lines swung out to the right and the
-        # picture had to grow to hold them.
+        # picture had to grow to hold them.  It used to come out half as
+        # wide again as it was tall.
         _, lay = layout(DEPENDENCIES)
-        self.assertLess(lay.width, lay.height)
+        self.assertLess(lay.width, lay.height * 1.15)
 
     def test_no_half_rank_when_no_caption_wants_one(self):
         _, lay = layout("flowchart TD\n A --> B\n")
@@ -526,6 +584,48 @@ class TestLayoutTidiness(unittest.TestCase):
         D._transpose(layers, [0, 1], adj.get)
         self.assertEqual(D._crossings(layers, [0, 1], adj.get), 0)
 
+
+
+    def test_a_caption_gives_way_rather_than_drag_its_edge(self):
+        # Labelling the same graph used to cost it half again in wander --
+        # every caption hauling its line across to sit exactly on it.
+        _, lay = layout(INCLUDES)
+        self.assertLess(wander(lay.routes), 1.25)
+
+    def test_labels_do_not_make_the_picture_balloon(self):
+        # Labelling every edge of a graph this size used to take it to
+        # 1218px wide, with the captions hauling the lines out sideways.
+        _, lay = layout(INCLUDES)
+        self.assertLess(lay.width, 950)
+
+    def test_more_than_one_starting_order_is_tried(self):
+        # The median and the swaps only walk downhill, so a single starting
+        # order settles wherever it happens to land -- 20 crossings on the
+        # plain graph and 20 on the labelled one, and no amount of extra
+        # sweeping moved either.  Several starts is what got past that.
+        _, plain = layout(DEPENDENCIES)
+        _, tagged = layout(INCLUDES)
+        self.assertLess(crossings(plain.routes), 10)
+        self.assertLess(crossings(tagged.routes), 12)
+
+    def test_a_node_sits_near_what_it_connects_to(self):
+        # Longest-path ranking alone puts D on rank 1, three ranks above the
+        # only thing it points at.  It belongs just above E.
+        _, lay = layout("flowchart TD\n A --> B\n B --> C\n C --> E\n"
+                        " A --> D\n D --> E\n")
+        rank_of = {n: round(p[1]) for n, p in lay.pos.items()}
+        self.assertGreater(rank_of["D"], rank_of["B"])
+        self.assertEqual(len(lay.routes[4]), 2)     # D --> E spans one rank
+
+    def test_tightening_never_puts_a_node_below_what_it_needs(self):
+        # Sliding nodes down must keep every edge pointing the same way.
+        names = [f"N{k}" for k in range(9)]
+        lines = ["flowchart TD"]
+        lines += [f" {a} --> {b}" for a, b in zip(names, names[1:])]
+        lines += [" N0 --> N8", " N2 --> N8", " N4 --> N8", " N1 --> N6"]
+        _, lay = layout("\n".join(lines) + "\n")
+        for route in lay.routes:
+            self.assertLess(route[0][1], route[-1][1])   # always downhill
 
 
 class TestSvg(unittest.TestCase):

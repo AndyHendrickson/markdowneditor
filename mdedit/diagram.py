@@ -20,6 +20,7 @@ Sequence diagrams are laid out top to bottom in one pass instead.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -54,6 +55,13 @@ DARK = {
 }
 
 PALETTES = {"light": LIGHT, "dark": DARK}
+
+#: How many shuffled orderings to try on top of the structured ones.  Two is
+#: where the corpus stops improving; more only costs time.
+RESTARTS = 2
+
+#: Fixed, so that one document always draws the same picture.
+SHUFFLE_SEED = 20260918
 
 
 # --------------------------------------------------------------------------
@@ -290,6 +298,32 @@ def _rank_nodes(ids: List[str], links: List[tuple]) -> Dict[str, int]:
             indeg[nxt] -= 1
             if not indeg[nxt]:
                 queue.append(nxt)
+
+    # Longest-path puts every node as early as it will go, which leaves the
+    # edges into a shared sink stretched across the whole depth of the
+    # picture -- exactly what a dependency graph is, with everything reaching
+    # down to one root.  Slide each node along its slack to where its own
+    # edges are shortest: the median of the ranks it connects to, which is
+    # what minimises the distance to all of them at once.
+    ins: Dict[str, List[str]] = {i: [] for i in ids}
+    for src, dst in forward:
+        ins[dst].append(src)
+    for _ in range(8):
+        moved = False
+        for node in ids:
+            if not out[node] or not ins[node]:
+                continue                # a source or a sink is already home
+            low = max(rank[p] for p in ins[node]) + 1
+            high = min(rank[c] for c in out[node]) - 1
+            if low > high:
+                continue
+            near = sorted(rank[n] for n in ins[node] + out[node])
+            want = min(max(near[len(near) // 2], low), high)
+            if want != rank[node]:
+                rank[node] = want
+                moved = True
+        if not moved:
+            break
     return rank
 
 
@@ -314,33 +348,51 @@ def _transpose(layers: Dict[int, List[str]], ranks, neighbours,
     The median pass gets each rank roughly right but cannot tell two nodes
     with the same median apart, so it leaves such pairs in whatever order it
     found them.  This is what settles them.
+
+    Whether a swap pays is worked out from the pair alone -- every edge of
+    the one against every edge of the other, and which way round they run --
+    rather than by counting the whole band again for each candidate.  The
+    band count is the same arithmetic done over and over for edges that
+    cannot have changed.
     """
-    def band(r: int) -> int:
-        total = 0
-        for other in (r - 1, r + 1):
-            if other in layers:
-                above, below = (other, r) if other < r else (r, other)
-                total += _between(layers[above], layers[below], neighbours)
-        return total
+    spots = {r: {n: i for i, n in enumerate(layers[r])} for r in ranks}
+
+    def pays(left: str, right: str, other: int) -> int:
+        """Crossings a swap of *left* and *right* would remove, one band."""
+        spot = spots.get(other)
+        if spot is None:
+            return 0
+        ours = [spot[n] for n in neighbours(left) if n in spot]
+        theirs = [spot[n] for n in neighbours(right) if n in spot]
+        if not ours or not theirs:
+            return 0
+        return (sum(1 for a in ours for b in theirs if a > b)
+                - sum(1 for a in ours for b in theirs if a < b))
 
     for _ in range(rounds):
         moved = False
         for r in ranks:
             row = layers[r]
             for i in range(len(row) - 1):
-                before = band(r)
-                row[i], row[i + 1] = row[i + 1], row[i]
-                if band(r) < before:
+                left, right = row[i], row[i + 1]
+                if pays(left, right, r - 1) + pays(left, right, r + 1) > 0:
+                    row[i], row[i + 1] = right, left
+                    spots[r][left], spots[r][right] = i + 1, i
                     moved = True
-                else:
-                    row[i], row[i + 1] = row[i + 1], row[i]
         if not moved:
             break
 
 
-def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
-                  passes: int = 8):
-    """Cut down crossings: sort each rank by where its neighbours sit."""
+def _order_layers(layers: Dict[int,
+                  List[str]],
+                  neighbours,
+                  cluster_of,
+                  passes: int = 8) -> int:
+    """Cut down crossings: sort each rank by where its neighbours sit.
+
+    Returns how many crossings the arrangement it settled on has, so that
+    the caller can try more than one starting point and keep the tidiest.
+    """
     ranks = sorted(layers)
     best = {r: list(layers[r]) for r in ranks}
     best_score = _crossings(layers, ranks, neighbours)
@@ -375,7 +427,7 @@ def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
         layers[r][:] = best[r]
 
     if not cluster_of:
-        return
+        return best_score
     # Keep the members of a subgraph together, so its box does not have to
     # swallow half the diagram to reach them all.
     for r in ranks:
@@ -390,6 +442,7 @@ def _order_layers(layers: Dict[int, List[str]], neighbours, cluster_of,
             means[cid] = sum(members) / len(members)
         layers[r].sort(key=lambda n: (means.get(cluster_of(n), spots[n]),
                                       spots[n]))
+    return _crossings(layers, ranks, neighbours)
 
 
 def _priority_place(order, want, size, gaps, pos, priority):
@@ -572,32 +625,59 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
     # travels as an invisible node on every rank it crosses, and this is what
     # puts that line of them beside the node they came from instead of out at
     # the edge of the picture with all the other long edges.
-    layers: Dict[int, List[str]] = {}
-    seen: set = set()
     written = {nid: k for k, nid in enumerate(ids)}
-    for start in sorted(ids, key=lambda n: (rank[n], written[n])):
-        stack = [start]
-        while stack:
-            node = stack.pop()
-            if node in seen:
-                continue
-            seen.add(node)
-            layers.setdefault(_rank_of(node, rank, dummies), []).append(node)
-            for nxt in reversed(forward.get(node, ())):
-                if nxt not in seen:
-                    stack.append(nxt)
-    for name, r in dummies.items():         # anything the walk never reached
-        if name not in seen:
-            seen.add(name)
-            layers.setdefault(r, []).append(name)
+
+    def walk(starts, flip: bool) -> Dict[int, List[str]]:
+        out: Dict[int, List[str]] = {}
+        seen: set = set()
+        for start in starts:
+            stack = [start]
+            while stack:
+                node = stack.pop()
+                if node in seen:
+                    continue
+                seen.add(node)
+                out.setdefault(_rank_of(node, rank, dummies), []).append(node)
+                kids = forward.get(node, ())
+                for nxt in (kids if flip else tuple(reversed(kids))):
+                    if nxt not in seen:
+                        stack.append(nxt)
+        for name, r in dummies.items():     # anything the walk never reached
+            if name not in seen:
+                seen.add(name)
+                out.setdefault(r, []).append(name)
+        return out
+
+    # Several starting points, not one.  The median and the swaps only ever
+    # walk downhill from where they begin, so the arrangement they settle on
+    # is decided by the order the graph happened to be walked in -- and the
+    # first walk is no more likely to be the right one than any other.
+    # Trying a few and keeping the tidiest is what gets past that.
+    by_rank = sorted(ids, key=lambda n: (rank[n], written[n]))
+    seeds = [walk(by_rank, False),                          # as written
+             walk(by_rank, True),                           # children reversed
+             walk(sorted(ids, key=lambda n: (rank[n], -written[n])), False),
+             walk(sorted(ids, key=lambda n: (rank[n], -len(adjacent.get(n, ())),
+                                             written[n])), False)]   # busiest
+    shuffler = random.Random(SHUFFLE_SEED)
+    for _ in range(RESTARTS):
+        shuffled = list(ids)
+        shuffler.shuffle(shuffled)
+        seeds.append(walk(sorted(shuffled, key=lambda n: rank[n]), False))
 
     home = {}
     for cid, members in clusters:
         for member in members:
             home.setdefault(member, cid)
 
-    _order_layers(layers, lambda n: adjacent.get(n, ()),
-                  (lambda n: home.get(n, "")) if clusters else None)
+    grouped = (lambda n: home.get(n, "")) if clusters else None
+    layers, fewest = seeds[0], None
+    for seed in seeds:
+        score = _order_layers(seed, lambda n: adjacent.get(n, ()), grouped)
+        if fewest is None or score < fewest:
+            layers, fewest = seed, score
+            if not fewest:              # nothing crosses; nothing to beat
+                break
 
     span = {n: (cross_size(n) if n in sizes
                 else spans[n][0] if n in spans else dummy_cross)
@@ -620,8 +700,13 @@ def _graph_layout(ids, sizes, links, direction, style, clusters=(),
     # wide diagonal staircase.
     # An invisible node outranks every real box: one long edge drawn
     # straight is worth more than any single box sitting exactly on the
-    # average of its neighbours.
+    # average of its neighbours.  A caption is the exception -- it still
+    # claims the room its text needs, but it gives way on where that room
+    # is, because a caption dragging its whole edge sideways to sit exactly
+    # on the line costs far more than the caption sitting a little off it.
     def rung(node):
+        if node in spans:
+            return 500
         return 1000 if node in dummies else len(adjacent.get(node, ()))
 
     for step in range(8):
