@@ -125,13 +125,47 @@ class TestTableFits(unittest.TestCase):
         return max((mono.measure(line)
                     for line in text.get("1.0", "end").split("\n")), default=0)
 
-    def test_a_wide_table_fits_the_column(self):
-        top, text, r = widget(900)
+    def test_a_wide_table_widens_the_block(self):
+        top, text, r = widget(1600)
         try:
             r.render(P.parse(self.SOURCE), "")
             top.update()
-            self.assertLessEqual(self.rendered_width(r, text),
-                                 r.content_width())
+            drawn = self.rendered_width(r, text)
+            # A grid is not prose, so it spreads past the text measure ...
+            self.assertGreater(drawn, r.content_width())
+            # ... but only as far as the block, which is room on the screen:
+            # there is nothing to scroll sideways to.
+            self.assertLessEqual(drawn, r._room())
+            self.assertAlmostEqual(text.xview()[1], 1.0, places=3)
+        finally:
+            top.destroy()
+
+    def test_prose_keeps_the_measure_beside_a_wide_table(self):
+        top, text, r = widget(1600)
+        try:
+            prose = "A paragraph long enough to wrap. " * 12
+            r.render(P.parse(prose + "\n\n" + self.SOURCE), "")
+            top.update()
+            column = r.content_width()
+            first = text.dlineinfo("1.0")[2]          # width of a wrapped line
+            self.assertLessEqual(first, column)       # held to the measure ...
+            self.assertGreater(first, column / 2)     # ... and filling it
+        finally:
+            top.destroy()
+
+    def test_a_tinted_margin_stays_a_bar(self):
+        top, text, r = widget(1600)
+        try:
+            # The block is wider than the measure here.  A quote or panel
+            # marks its own edge with a coloured margin, and that margin has
+            # to stay the width of a bar -- not spread across the gap beside
+            # the column, which is what a margin-based column offset does.
+            r.render(P.parse("::: note\nA panel.\n:::\n\n" + self.SOURCE), "")
+            top.update()
+            tinted = [n for n in text.tag_names() if n.startswith("mar_")]
+            self.assertTrue(tinted)
+            for name in tinted:
+                self.assertLess(int(text.tag_cget(name, "lmargin1")), 40)
         finally:
             top.destroy()
 
@@ -173,6 +207,21 @@ class TestResize(unittest.TestCase):
             r.render(P.parse("| a | b |\n| --- | --- |\n| 1 | 2 |\n"), "")
             self.assertFalse(r.needs_relayout(900))
             self.assertTrue(r.needs_relayout(400))
+        finally:
+            top.destroy()
+
+    def test_a_wider_pane_relays_out_for_the_grids(self):
+        cells = " | ".join("a repository name" for _ in range(16))
+        wide = (f"| {cells} |\n| {' | '.join('---' for _ in range(16))} |\n"
+                f"| {cells} |\n")
+        top, _, r = widget(1400)
+        try:
+            r.render(P.parse(wide), "")
+            # This table wants more than either pane has, so the block is the
+            # pane.  The text column is already at its measure and does not
+            # move, but the block does, and the table is drawn to the block.
+            self.assertEqual(r.content_width(1400), r.content_width(2000))
+            self.assertTrue(r.needs_relayout(2000))
         finally:
             top.destroy()
 

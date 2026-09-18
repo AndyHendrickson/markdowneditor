@@ -200,7 +200,12 @@ class MarkdownRenderer:
         self._diagrams: List[list] = []      # [canvas, scene, scale factor]
         self._canvas_fonts = {}
         self._pad_now = -1
+        self._extra_now = -1
+        self._indent_tags: dict = {}         # name -> its own right gutter
+        self._wide_grid = 0                  # widest grid in the document
+        self._scenes: dict = {}              # diagram source -> laid-out scene
         self._laid_out_at = 0
+        self._blocked_at = 0
         self._link_targets = {}
         self._link_seq = 0
         self._list_depth = 0
@@ -240,8 +245,15 @@ class MarkdownRenderer:
     # A line of text that runs the whole width of a wide window is hard to
     # read, which is why every flavour's exported CSS caps the page at some
     # measure.  The preview follows the same cap: past it the column stops
-    # growing and centres instead, and everything that has to know how wide
-    # the text is -- rules, tables, diagrams -- asks for ``content_width``.
+    # growing and centres instead.
+    #
+    # A table and a diagram are grids rather than sentences, though, and the
+    # measure is no kindness to them: it breaks words inside every cell and
+    # shrinks every drawing while the rest of a wide pane stands empty.  So
+    # what gets centred is the content *block* -- as wide as the widest grid
+    # the document has, and never narrower than the measure.  Prose keeps to
+    # the measure down the block's left side.  ``content_width`` is the
+    # column a rule spans; ``_room`` is what a grid may use.
 
     def _measure_px(self, pane: int) -> int:
         spec = self._metric("measure", 0)
@@ -255,34 +267,93 @@ class MarkdownRenderer:
                 best = self.px(width)
         return best
 
-    def _side_pad(self, pane: int) -> int:
-        base = self.px(self._metric("pad_x", 22))
-        measure = self._measure_px(pane)
-        if measure and pane > measure + 2 * base:
-            return int((pane - measure) / 2)
-        return base
+    def _gutter(self) -> int:
+        """The padding the widget keeps on both sides, whatever else happens."""
+        return self.px(self._metric("pad_x", 22))
 
-    def content_width(self, pane: Optional[int] = None) -> int:
-        """How wide the text column actually is, inside the padding."""
+    def _widths(self, pane: Optional[int] = None) -> tuple:
+        """``(pane, measure, block)`` for a pane width, all in pixels."""
         if pane is None:
             pane = self.text.winfo_width()
         pane = pane if pane > 1 else 640
-        return max(120, pane - 2 * self._side_pad(pane))
+        most = max(1, pane - 2 * self._gutter())
+        measure = min(self._measure_px(pane) or most, most)
+        return pane, measure, max(measure, min(self._wide_grid, most))
+
+    def _widest_grid(self, doc: P.Document) -> int:
+        """How much width the widest grid in *doc* would like.
+
+        Measured before anything is drawn, because it is what decides how
+        wide the block is -- and the block is what a grid is then fitted to.
+        A grid nested in a quote or a list is measured as if it were not:
+        the few pixels of indent it loses are not worth a second pass.
+        """
+        widest = 0
+
+        def walk(nodes):
+            nonlocal widest
+            for node in nodes:
+                if isinstance(node, P.Table):
+                    widest = max(widest, self._table_natural(node))
+                elif isinstance(node, P.Diagram):
+                    scene = self._scene(node)
+                    if scene is not None:
+                        widest = max(widest, int(scene.width))
+                elif isinstance(node, (P.BlockQuote, P.Panel, P.HtmlBlock)):
+                    walk(node.children)
+                elif isinstance(node, P.ListBlock):
+                    for item in node.items:
+                        walk(item.children)
+
+        walk(doc.children)
+        return widest + self.px(12) if widest else 0
+
+    def _table_natural(self, node: P.Table) -> int:
+        """How wide *node* would be drawn if no column had to give way."""
+        cols = len(node.aligns)
+        if not cols:
+            return 0
+        frame = _TABLE_STYLES.get(self._metric("table_style", "plain"),
+                                  _TABLE_STYLES["plain"])[2]
+        widths = [0] * cols
+        for row in [node.header] + list(node.rows):
+            for c, cell in enumerate(row[:cols]):
+                widths[c] = max(widths[c], len(P.plain_text(cell)))
+        chrome = 2 * cols + (cols - 1) + (2 if frame else 0)
+        char = max(1, self._fonts["mono"].measure("0"))
+        return (sum(min(w, 60) for w in widths) + chrome) * char
+
+    def _side_pad(self, pane: int) -> int:
+        gutter = self._gutter()
+        _, _, block = self._widths(pane)
+        if pane > block + 2 * gutter:
+            return int((pane - block) / 2)
+        return gutter
+
+    def content_width(self, pane: Optional[int] = None) -> int:
+        """How wide the text column is: the measure, inside the block."""
+        return max(120, self._widths(pane)[1])
+
+    def _room(self, pane: Optional[int] = None, indent: int = 0) -> int:
+        """How much width a grid may use: the block, less what indents it."""
+        return max(1, self._widths(pane)[2] - indent - self.px(12))
 
     def needs_relayout(self, pane: Optional[int] = None) -> bool:
         """Has the column moved enough that the text has to be laid out again?
 
         Rules and diagrams are refitted in place, but a table's columns were
-        measured in characters when it was drawn, so a real change of width
-        means drawing the document again.
+        measured in characters when it was drawn, so a real change of either
+        width -- the text column, or the block a grid is drawn to -- means
+        drawing the document again.
         """
         if self._doc is None:
             return False
         char = max(1, self._fonts["mono"].measure("0"))
-        return abs(self.content_width(pane) - self._laid_out_at) >= char
+        return (abs(self.content_width(pane) - self._laid_out_at) >= char
+                or abs(self._widths(pane)[2] - self._blocked_at) >= char)
 
     def fit_width(self, pane: Optional[int] = None):
-        """Re-centre the text column for the current pane width."""
+        """Re-centre the content block for the current pane width."""
         if pane is None:
             pane = self.text.winfo_width()
         if pane <= 1:
@@ -292,6 +363,26 @@ class MarkdownRenderer:
             self._pad_now = pad
             try:
                 self.text.configure(padx=pad)
+            except tk.TclError:
+                pass
+        _, measure, block = self._widths(pane)
+        extra = max(0, block - measure)
+        if extra != self._extra_now:
+            self._extra_now = extra
+            self._hold_the_measure()
+
+    def _hold_the_measure(self):
+        """Keep prose at the measure when the block is wider than it.
+
+        The widget wraps at its own edge, which is the block once a grid has
+        widened it, so prose is pulled back in by the right margin on its
+        tags -- a grid sets no margin it has to obey (a table does not wrap,
+        and a drawing is one indivisible character to the widget).
+        """
+        extra = max(0, self._extra_now)
+        for name, gutter in self._indent_tags.items():
+            try:
+                self.text.tag_configure(name, rmargin=gutter + extra)
             except tk.TclError:
                 pass
 
@@ -331,8 +422,11 @@ class MarkdownRenderer:
         for name in t.tag_names():
             if name.startswith(("ind_", "mar_", "sty_")):
                 t.tag_delete(name)
+        self._indent_tags.clear()
 
-        self._pad_now = self._side_pad(max(1, t.winfo_width()))
+        pane, measure, block = self._widths(max(1, t.winfo_width()))
+        self._pad_now = self._side_pad(pane)
+        self._extra_now = max(0, block - measure)
         t.configure(
             background=th["bg"], foreground=th["fg"], insertbackground=th["cursor"],
             selectbackground=th["select"], font=f["body"], wrap="word",
@@ -469,7 +563,12 @@ class MarkdownRenderer:
         self._margin_stack.clear()
         t.delete("1.0", "end")
 
+        self._scenes.clear()
+        self._wide_grid = self._widest_grid(doc)
+        self.fit_width()
+
         self._laid_out_at = self.content_width()
+        self._blocked_at = self._widths()[2]
         for block in doc.children:
             self._block(block, indent=0, tags=())
         t.delete("end-1c", "end")  # drop the final stray newline
@@ -483,11 +582,16 @@ class MarkdownRenderer:
     def _indent_tag(self, first: int, hanging: int, color: str = "") -> str:
         prefix = "mar" if color else "ind"
         name = f"{prefix}_{first}_{hanging}_{color.lstrip('#')}"
-        if name not in self.text.tag_names():
-            opts = dict(lmargin1=first, lmargin2=hanging, rmargin=self.px(8))
+        if name not in self._indent_tags:
+            # Indented text keeps a small gutter of its own; text on the
+            # column itself does not, because the widget's padding is one.
+            gutter = self.px(8) if (first or hanging) else 0
+            opts = dict(lmargin1=first, lmargin2=hanging,
+                        rmargin=gutter + max(0, self._extra_now))
             if color and self._margin_color:
                 opts["lmargincolor"] = color
             self.text.tag_configure(name, **opts)
+            self._indent_tags[name] = gutter
         return name
 
     def _blank_line(self, indent: int, tags: tuple):
@@ -496,7 +600,7 @@ class MarkdownRenderer:
         self._ins("\n", tuple(tags) + ind)
 
     def _block(self, node, indent: int, tags: tuple):
-        base = tuple(tags) + ((self._margin_indent(indent),) if indent else ())
+        base = tuple(tags) + (self._margin_indent(indent),)
 
         if isinstance(node, P.Heading):
             self._inlines(node.children, base + (f"h{node.level}",),
@@ -665,10 +769,17 @@ class MarkdownRenderer:
                 sz, bold).measure(text),
         )
 
+    def _scene(self, node: P.Diagram):
+        """The laid-out drawing for *node*, worked out once per render."""
+        if not self.opts.mermaid:
+            return None
+        if node.source not in self._scenes:
+            self._scenes[node.source] = diagram.render(node.model,
+                                                       self._diagram_style())
+        return self._scenes[node.source]
+
     def _diagram(self, node: P.Diagram, indent: int, tags: tuple):
-        scene = None
-        if self.opts.mermaid:
-            scene = diagram.render(node.model, self._diagram_style())
+        scene = self._scene(node)
         if scene is None:      # unreadable after all: show it as it was typed
             self._code_block(P.CodeBlock(text=node.source, lang="mermaid"),
                              indent, tags)
@@ -695,14 +806,7 @@ class MarkdownRenderer:
         A diagram too big even then runs past the edge and can be scrolled to,
         the same as a table too wide for the pane.
         """
-        if pane is None:
-            pane = self.text.winfo_width()
-        pane = pane if pane > 1 else 640
-        base = self.px(self._metric("pad_x", 22))
-        # A diagram starts at the column's left edge, so what it has to play
-        # with is everything from there to the far side of the pane.
-        room = pane - self._side_pad(pane) - base
-        avail = room - indent - self.px(12)
+        avail = self._room(pane, indent)
         return min(1.0, max(0.5, avail / width)) if width else 1.0
 
     def _draw_scene(self, entry: list, factor: float):
@@ -799,12 +903,12 @@ class MarkdownRenderer:
             for c in range(cols):
                 widths[c] = max(widths[c], len(row[c]))
 
-        # Fit the table to the column rather than to a fixed number of
+        # Fit the table to the block rather than to a fixed number of
         # characters: a cell that has to give way wraps inside its box, and
         # the table stops running off the edge of a narrow pane.
         char = max(1, self._fonts["mono"].measure("0"))
         chrome = 2 * cols + (cols - 1) + (2 if frame else 0)
-        budget = (self.content_width() - indent - self.px(10)) // char - chrome
+        budget = self._room(indent=indent) // char - chrome
         widths = fit_columns([min(w, 60) for w in widths], int(budget))
 
         ind = self._margin_indent(indent + self.px(8))

@@ -127,8 +127,8 @@ three groups the dialog uses:
   only, preview only), synchronised scrolling. Preferences persist in
   `~/.mdedit.json`.
 - The preview keeps a readable text column: widen the window past the mode's
-  measure and the text centres rather than stretching, while tables and
-  diagrams are refitted to whatever width there is.
+  measure and the text centres rather than stretching, while a table or a
+  diagram is allowed the width it actually needs.
 
 **Rendering**
 
@@ -146,6 +146,15 @@ mode brings its own — mdedit 43em, GitHub 59em, Confluence 65em and so on,
 with Chrome stepping up in stages the way the extension does. Below the
 measure the column simply uses what the pane has.
 
+A table and a diagram are grids rather than sentences, and the measure is no
+kindness to them: it breaks words down the middle of every cell and shrinks
+every drawing while the rest of a wide window stands empty. So what is
+centred is the content **block** — as wide as the widest grid the document
+has, never narrower than the measure, and never wider than the window. Prose
+keeps to the measure down the block's left side. A document with nothing
+wide in it has a block exactly as wide as its measure, and looks the same as
+it always did.
+
 Tables are boxed in the preview, following the same mode as everything else:
 a frame with row and column dividers, drawn in the mode's own rule colour,
 matching the borders its exported CSS puts on every cell. Visual Studio and
@@ -153,7 +162,9 @@ Hugo clear those borders and keep a rule under each row instead, so that is
 what the preview draws for them. Columns are fitted to the width actually
 available: the ones that fit keep their natural width and the widest give up
 the room, wrapping inside their boxes rather than pushing the grid past the
-edge of the pane. Narrow the window and the table is laid out again to suit.
+edge of the pane. Widen the window and a table that had to give something up
+is laid out again with the room it now has; narrow it and the columns close
+back up.
 
 **Diagrams**
 
@@ -198,7 +209,7 @@ whatever sits at the top of the box. It is a careful approximation of what merma
 of it — a big graph will be laid out more plainly than mermaid would lay it
 out. A diagram may use more width than the text column, up to the window; it
 is never shrunk past half size, and one still too wide runs past the edge
-and can be scrolled to, like a table too wide for the pane. In exported HTML
+and can be scrolled to, like a table too wide for the window. In exported HTML
 it scrolls inside its own figure.
 
 Clicking a link in the preview that points at a local Markdown file opens
