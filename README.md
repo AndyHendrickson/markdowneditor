@@ -124,8 +124,8 @@ three groups the dialog uses:
   an empty list item ends the list.
 - Document outline sidebar; clicking a heading jumps to it.
 - Light and dark themes, adjustable text size, three layouts (split, editor
-  only, preview only), synchronised scrolling. Preferences persist in
-  `~/.mdedit.json`.
+  only, preview only), synchronised scrolling (either pane leads).
+  Preferences persist in `~/.mdedit.json`.
 - The preview keeps a readable text column: widen the window past the mode's
   measure and the text centres rather than stretching, while a table or a
   diagram is allowed the width it actually needs.

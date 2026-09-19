@@ -128,6 +128,59 @@ def bends(routes) -> int:
     return count
 
 
+def turns(points, floor: float = 5.0) -> int:
+    """How many times the run changes direction by more than *floor*."""
+    count = 0
+    for a, b, c in zip(points, points[1:], points[2:]):
+        first = (b[0] - a[0], b[1] - a[1])
+        second = (c[0] - b[0], c[1] - b[1])
+        n1, n2 = math.hypot(*first), math.hypot(*second)
+        if n1 < 1e-6 or n2 < 1e-6:
+            continue
+        cos = (first[0] * second[0] + first[1] * second[1]) / (n1 * n2)
+        if math.degrees(math.acos(max(-1.0, min(1.0, cos)))) > floor:
+            count += 1
+    return count
+
+
+def sharpest(points) -> float:
+    """The widest turn the run makes, in degrees."""
+    worst = 0.0
+    for a, b, c in zip(points, points[1:], points[2:]):
+        first = (b[0] - a[0], b[1] - a[1])
+        second = (c[0] - b[0], c[1] - b[1])
+        n1, n2 = math.hypot(*first), math.hypot(*second)
+        if n1 < 1e-6 or n2 < 1e-6:
+            continue
+        cos = (first[0] * second[0] + first[1] * second[1]) / (n1 * n2)
+        worst = max(worst, math.degrees(math.acos(max(-1.0, min(1.0, cos)))))
+    return worst
+
+
+def curves(src: str):
+    """Every edge of a flowchart as it is drawn -- boundary to boundary."""
+    chart, lay = layout(src)
+    style = D.style_for("light")
+    sizes = {n: D._node_size(style.lines(chart.nodes[n].text or n),
+                             chart.nodes[n].shape, style) for n in chart.nodes}
+    out = []
+    for k, route in enumerate(lay.routes):
+        edge = chart.edges[k]
+        if len(route) < 2 or edge.src not in sizes or edge.dst not in sizes:
+            out.append((list(route), list(route)))
+            continue
+        pts = D._simplify(list(route), (edge.src, edge.dst), lay.pos, sizes,
+                          style.size * 1.4, (lay.captions.get(k),))
+        sw, sh = sizes[edge.src]
+        dw, dh = sizes[edge.dst]
+        pts[0] = D._boundary(chart.nodes[edge.src].shape, *pts[0], sw, sh,
+                             *pts[1])
+        pts[-1] = D._boundary(chart.nodes[edge.dst].shape, *pts[-1], dw, dh,
+                              *pts[-2])
+        out.append((pts, D._smooth(pts)))
+    return chart, lay, sizes, out
+
+
 def crossings(routes) -> int:
     """How many times one route crosses another, as drawn."""
     def side(a, b, c):
@@ -626,6 +679,97 @@ class TestLayoutTidiness(unittest.TestCase):
         _, lay = layout("\n".join(lines) + "\n")
         for route in lay.routes:
             self.assertLess(route[0][1], route[-1][1])   # always downhill
+
+
+class TestEdgeCurves(unittest.TestCase):
+    """An edge is drawn as a curve through its slots, not a run of corners."""
+
+    def test_a_straight_run_is_left_alone(self):
+        run = [(0.0, 0.0), (0.0, 80.0)]
+        self.assertEqual(D._smooth(run), run)
+
+    def test_a_corner_is_rounded_off(self):
+        route = [(0.0, 0.0), (0.0, 60.0), (70.0, 120.0)]
+        curve = D._smooth(route)
+        self.assertGreater(len(curve), len(route))
+        self.assertLess(sharpest(curve), sharpest(route) / 2)
+
+    def test_the_curve_still_goes_through_its_slots(self):
+        # The slots are what hold a long edge clear of the boxes it passes,
+        # so the curve has to keep them, not cut the corner off them.
+        route = [(0.0, 0.0), (0.0, 60.0), (70.0, 120.0), (70.0, 180.0)]
+        curve = D._smooth(route)
+        for slot in route:
+            self.assertTrue(any(math.dist(slot, p) < 0.01 for p in curve),
+                            f"{slot} is not on the curve")
+
+    def test_rounding_never_puts_an_edge_through_a_box(self):
+        # The slots hold a long edge clear of what it passes; rounding the
+        # corners off between them must not undo that.  It is not enough for
+        # the curve to be clear in general -- it has to be clear wherever
+        # the straight route was, which is the thing being replaced.
+        for name, src in (("plain", DEPENDENCIES), ("labelled", INCLUDES)):
+            chart, lay, sizes, drawn = curves(src)
+
+            def through(run, edge):
+                for a, b in zip(run, run[1:]):
+                    steps = max(2, int(math.dist(a, b) / 2))
+                    for i in range(steps + 1):
+                        x = a[0] + (b[0] - a[0]) * i / steps
+                        y = a[1] + (b[1] - a[1]) * i / steps
+                        for nid in chart.nodes:
+                            if nid in (edge.src, edge.dst):
+                                continue
+                            cx, cy = lay.pos[nid]
+                            w, h = sizes[nid]
+                            if abs(x - cx) < w / 2 and abs(y - cy) < h / 2:
+                                return True
+                return False
+
+            for k, (straight, curve) in enumerate(drawn):
+                edge = chart.edges[k]
+                if not through(straight, edge):
+                    self.assertFalse(through(curve, edge),
+                                     f"{name}: rounding {edge.src}->"
+                                     f"{edge.dst} put it through a box")
+
+    def test_the_picture_is_mostly_free_of_corners(self):
+        # Every rank a long edge crossed used to put a corner in it.
+        _, _, _, drawn = curves(DEPENDENCIES)
+        sharp = sum(1 for _, curve in drawn if sharpest(curve) > 25)
+        self.assertLess(sharp, 4)
+
+
+    def test_a_transit_edge_does_not_wander(self):
+        # An edge crossing several ranks used to pick up a change of
+        # direction at nearly every one of them -- six on the plain graph
+        # and twelve on the labelled one, for the same single edge.
+        for name, src in (("plain", DEPENDENCIES), ("labelled", INCLUDES)):
+            chart, lay, sizes, drawn = curves(src)
+            worst = max((turns(straight), chart.edges[k].src + "->"
+                         + chart.edges[k].dst)
+                        for k, (straight, _) in enumerate(drawn))
+            self.assertLess(worst[0], 5, f"{name}: {worst[1]}")
+
+    def test_a_slot_doing_a_job_is_kept(self):
+        # Straightening may only take out the wandering.  A slot that is
+        # holding the line clear of a box has to stay, and the test that
+        # nothing ends up through a box is what checks it did.
+        chart, lay, sizes, drawn = curves(DEPENDENCIES)
+        self.assertTrue(any(len(straight) > 2 for straight, _ in drawn),
+                        "every route was straightened to a single run")
+
+    def test_a_caption_keeps_its_place_on_the_line(self):
+        # The label is drawn at the slot the layout kept for it, so that
+        # slot must survive being straightened or the caption comes adrift.
+        chart, lay, sizes, drawn = curves(INCLUDES)
+        for k, (straight, _) in enumerate(drawn):
+            spot = lay.captions.get(k)
+            if spot is None:
+                continue
+            self.assertTrue(any(math.dist(spot, p) < 0.01 for p in straight),
+                            f"{chart.edges[k].src}->{chart.edges[k].dst}"
+                            f" lost the slot its caption sits on")
 
 
 class TestSvg(unittest.TestCase):

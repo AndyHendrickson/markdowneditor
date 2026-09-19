@@ -101,6 +101,16 @@ class EditorText(tk.Text):
             self.event_generate("<<TextChanged>>", when="tail")
         return result
 
+    def move_to(self, fraction: float):
+        """Scroll the view without announcing it.
+
+        A ``yview`` through the proxy counts as a change, which is what
+        keeps the gutter and the preview in step when the *user* scrolls.
+        A view driven from the other pane is not news, though: echoing it
+        back would schedule a re-render on every tick of a drag.
+        """
+        self.tk.call(self._orig, "yview", "moveto", fraction)
+
 
 class LineNumbers(tk.Canvas):
     """A thin gutter that mirrors the editor's visible line numbers."""
@@ -489,7 +499,7 @@ class MarkdownApp(tk.Tk):
         # instead -- this is how you get back to the rest of it.
         self.pxscroll = ttk.Scrollbar(self.right, orient="horizontal",
                                       command=self.preview.xview)
-        self.preview.configure(yscrollcommand=self.pscroll.set,
+        self.preview.configure(yscrollcommand=self._on_preview_scroll,
                                xscrollcommand=self.pxscroll.set)
         self.preview.grid(row=0, column=0, sticky="nsew")
         self.pscroll.grid(row=0, column=1, sticky="ns")
@@ -1029,9 +1039,11 @@ class MarkdownApp(tk.Tk):
         doc = P.parse(source, self.opts())
         base_dir = os.path.dirname(self.path) if self.path else os.getcwd()
         self.preview.configure(state="normal")
+        outer, self._syncing = self._syncing, True
         try:
             self.renderer.render(doc, base_dir, self.opts())
         finally:
+            self._syncing = outer
             self.preview.configure(state="disabled")
         if self.sync_scroll.get():
             self.sync_preview_to_editor()
@@ -1050,11 +1062,24 @@ class MarkdownApp(tk.Tk):
                 pass
             self._syncing = False
 
+    def _on_preview_scroll(self, first, last):
+        self.pscroll.set(first, last)
+        if self.sync_scroll.get() and not self._syncing:
+            self._syncing = True
+            try:
+                self.editor.move_to(float(first))
+            except (tk.TclError, ValueError):
+                pass
+            self._syncing = False
+
     def sync_preview_to_editor(self):
+        outer, self._syncing = self._syncing, True
         try:
             self.preview.yview_moveto(self.editor.yview()[0])
         except (tk.TclError, ValueError):
             pass
+        finally:
+            self._syncing = outer
 
     def _preview_wheel(self, event):
         self.preview.yview_scroll(int(-event.delta / 120), "units")

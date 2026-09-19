@@ -12,6 +12,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mdedit import flavors, parser as P, tkrender  # noqa: E402
+from mdedit.app import MarkdownApp  # noqa: E402
 
 try:
     import tkinter as tk
@@ -259,6 +260,93 @@ class TestResize(unittest.TestCase):
         finally:
             top.destroy()
 
+
+@unittest.skipIf(tk is None, globals().get("_WHY", "no tkinter"))
+class TestScrollSync(unittest.TestCase):
+    """The panes follow each other -- both ways -- while sync is on.
+
+    Scroll fractions are compared loosely, and a pane that should not have
+    moved is checked by the line at its top instead.  Tk measures display
+    lines lazily, so a freshly rendered preview reports a fraction that
+    can still shift by a few percent without the view moving at all.
+    """
+
+    DOC = ("\n\n".join(
+        f"## Section {n}\n\nProse in section {n}, long enough that"
+        f" it wraps once or twice in a pane this wide."
+        for n in range(1, 121)))
+
+    @staticmethod
+    def quiet(app):
+        """Drop any queued re-render.
+
+        A render re-centres the preview on the editor, which would move a
+        pane for a reason that has nothing to do with the scroll link.
+        """
+        app._cancel(app._render_job)
+        app._render_job = None
+
+    @classmethod
+    def app(cls):
+        """A live app holding a document far taller than either pane."""
+        app = MarkdownApp()
+        app.geometry("1200x700")
+        app.update()
+        app.editor.delete("1.0", "end")
+        app.editor.insert("1.0", cls.DOC)
+        for _ in range(4):              # land the debounced render
+            app.update()
+            if app._render_job is None:
+                break
+            app._cancel(app._render_job)
+            app.render_now()
+        cls.quiet(app)
+        return app
+
+    def test_the_editor_drives_the_preview(self):
+        app = self.app()
+        try:
+            app.editor.yview("moveto", 0.75)    # what its scrollbar does
+            app.update()
+            self.assertAlmostEqual(app.preview.yview()[0], 0.75, delta=0.1)
+        finally:
+            app.destroy()
+
+    def test_the_preview_drives_the_editor(self):
+        app = self.app()
+        try:
+            app.preview.yview("moveto", 0.45)
+            app.update()
+            self.assertAlmostEqual(app.editor.yview()[0], 0.45, delta=0.05)
+        finally:
+            app.destroy()
+
+    def test_a_preview_scroll_does_not_ask_for_a_render(self):
+        # A render re-centres the preview on the editor, so a preview
+        # scroll that queued one would snap itself back mid-drag.
+        app = self.app()
+        try:
+            self.quiet(app)
+            app.preview.yview("moveto", 0.30)
+            app.update()
+            self.assertIsNone(app._render_job)
+        finally:
+            app.destroy()
+
+    def test_sync_off_leaves_each_pane_alone(self):
+        app = self.app()
+        try:
+            app.sync_scroll.set(False)
+            app.preview.yview("moveto", 0.40)
+            app.update()
+            self.assertEqual(app.editor.yview()[0], 0.0)
+            top = app.preview.index("@0,0")
+            self.quiet(app)
+            app.editor.yview("moveto", 0.90)
+            app.update()
+            self.assertEqual(app.preview.index("@0,0"), top)
+        finally:
+            app.destroy()
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

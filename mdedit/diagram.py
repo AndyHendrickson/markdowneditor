@@ -837,6 +837,146 @@ def _boundary(shape: str, cx, cy, w, h, px, py):
     return cx + dx * t, cy + dy * t
 
 
+def _smooth(points: List[Tuple[float, float]],
+            steps: int = 8) -> List[Tuple[float, float]]:
+    """Round a route off into a curve that still passes through its points.
+
+    A route runs straight between the slots kept for it on every rank it
+    crosses, so drawn as it stands it turns a visible corner at each one.
+    This is a centripetal Catmull-Rom through the same points: it keeps
+    them, because those slots are what hold the line clear of the boxes,
+    and only rounds off the corners in between.
+    """
+    if len(points) < 3:
+        return list(points)
+    pts = [points[0]] + list(points) + [points[-1]]
+    out: List[Tuple[float, float]] = [points[0]]
+    for i in range(1, len(pts) - 2):
+        p0, p1, p2, p3 = pts[i - 1], pts[i], pts[i + 1], pts[i + 2]
+        # Centripetal parametrisation -- knots spaced by the square root of
+        # the distance.  It is what stops a tight turn from looping back on
+        # itself, which the plain uniform form does.
+        knots = [0.0]
+        for a, b in ((p0, p1), (p1, p2), (p2, p3)):
+            step = math.dist(a, b) ** 0.5
+            knots.append(knots[-1] + (step if step > 1e-6 else 1e-6))
+        t0, t1, t2, t3 = knots
+
+        def blend(lo, hi, a, b, u):
+            """The point *u* of the way from *a* at *lo* to *b* at *hi*."""
+            return [((hi - u) * a[j] + (u - lo) * b[j]) / (hi - lo)
+                    for j in (0, 1)]
+
+        for k in range(1, steps + 1):
+            u = t1 + (t2 - t1) * k / steps
+            a1 = blend(t0, t1, p0, p1, u)
+            a2 = blend(t1, t2, p1, p2, u)
+            a3 = blend(t2, t3, p2, p3, u)
+            b1 = blend(t0, t2, a1, a2, u)
+            b2 = blend(t1, t3, a2, a3, u)
+            out.append(tuple(blend(t1, t2, b1, b2, u)))
+
+    # Most of a route is straight, and a straight run needs two points, not
+    # sixteen: drop whatever sits on the line between its neighbours.
+    kept = [out[0]]
+    for before, here, after in zip(out, out[1:], out[2:]):
+        ax, ay = here[0] - before[0], here[1] - before[1]
+        bx, by = after[0] - here[0], after[1] - here[1]
+        if abs(ax * by - ay * bx) > 0.12 * (math.hypot(ax, ay)
+                                            + math.hypot(bx, by)):
+            kept.append(here)
+    kept.append(out[-1])
+    return kept
+
+
+def _hits_a_box(run, skip, pos, sizes) -> bool:
+    """Does *run* cross a box that is not one of its own two ends?
+
+    Segment against rectangle, not point against rectangle: a line can pass
+    clean through a box without any of the points it is drawn from landing
+    inside it.
+    """
+    boxes = [(cx, cy, sizes[nid][0] / 2 - 0.5, sizes[nid][1] / 2 - 0.5)
+             for nid, (cx, cy) in pos.items()
+             if nid not in skip and nid in sizes]
+    for (x1, y1), (x2, y2) in zip(run, run[1:]):
+        dx, dy = x2 - x1, y2 - y1
+        for cx, cy, hw, hh in boxes:
+            near, far = 0.0, 1.0
+            for step, room in ((-dx, x1 - (cx - hw)), (dx, (cx + hw) - x1),
+                               (-dy, y1 - (cy - hh)), (dy, (cy + hh) - y1)):
+                if not step:
+                    if room < 0:
+                        break
+                    continue
+                edge = room / step
+                if step < 0:
+                    if edge > far:
+                        break
+                    near = max(near, edge)
+                else:
+                    if edge < near:
+                        break
+                    far = min(far, edge)
+            else:
+                return True
+    return False
+
+
+def _off_line(a, b, p) -> float:
+    """How far *p* sits off the line from *a* to *b*."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    span = math.hypot(dx, dy)
+    if span < 1e-9:
+        return math.dist(a, p)
+    return abs(dx * (a[1] - p[1]) - dy * (a[0] - p[0])) / span
+
+
+def _simplify(points, skip, pos, sizes, slack: float, keep=()):
+    """Take out the turns a route does not need.
+
+    A route bends at every rank it crosses, because it is made of the slots
+    kept for it on each one, and most of those bends hold the line away from
+    nothing: where the straight run between a slot's two neighbours is still
+    clear of every box, the slot is not earning its corner.
+
+    Only the small wanderings go.  A slot further than *slack* off the line
+    is kept whatever else is true: it is a real detour the route is making,
+    and pulling it straight would march the line across the picture rather
+    than tidy it.
+    """
+    if len(points) < 3:
+        return list(points)
+    anchors = [a for a in keep if a]
+    out = list(points)
+    i = 1
+    while i < len(out) - 1:
+        if any(math.dist(out[i], a) < 0.01 for a in anchors):
+            i += 1                      # a caption rides on this one
+        elif _off_line(out[i - 1], out[i + 1], out[i]) > slack:
+            i += 1                      # too far off to be a wobble
+        elif _hits_a_box((out[i - 1], out[i + 1]), skip, pos, sizes):
+            i += 1                      # the slot is doing a job
+        else:
+            del out[i]
+            i = max(1, i - 1)           # the turn before may go too now
+    return out
+
+
+def _rounded(points, skip, pos, sizes):
+    """The route with its corners rounded off, unless that costs too much.
+
+    Rounding bulges the line a little to the outside of every turn, and now
+    and then that is enough to put it across a box the straight run cleared.
+    Where that happens the straight run is kept: a corner is easier to read
+    than a line through a box.
+    """
+    curved = _smooth(points)
+    if _hits_a_box(curved, skip, pos, sizes)             and not _hits_a_box(points, skip, pos, sizes):
+        return points
+    return curved
+
+
 def _shorten(x1, y1, x2, y2, amount):
     """Pull (x2, y2) back along the segment, to leave room for an arrow."""
     dist = math.hypot(x2 - x1, y2 - y1)
@@ -1120,15 +1260,16 @@ def _edge_items(edge, route, chart, sizes, lay, style, spot=None) -> tuple:
         cx, cy = lay.pos[edge.src]
         w, h = sizes[edge.src]
         out = w / 2 + style.size * 1.6
-        pts = [(cx + w / 2, cy - h / 4), (cx + out, cy - h / 4),
-               (cx + out, cy + h / 4), (cx + w / 2, cy + h / 4)]
+        pts = _smooth([(cx + w / 2, cy - h / 4), (cx + out, cy - h / 4),
+                       (cx + out, cy + h / 4), (cx + w / 2, cy + h / 4)])
         items = [Line(points=pts, stroke=color, width=width, dash=dash)]
         items += _head_items(edge.dst_head, pts[-1], pts[-2], style, color)
         return items, _label_items(edge.text, cx + out + style.size, cy, style,
                                    style.color("edge_text"),
                                    style.color("label_bg"))
 
-    points = list(route)
+    points = _simplify(list(route), (edge.src, edge.dst), lay.pos, sizes,
+                       style.size * 1.4, (spot,))
     src_shape = chart.nodes[edge.src].shape
     dst_shape = chart.nodes[edge.dst].shape
     sw, sh = sizes[edge.src]
@@ -1137,6 +1278,8 @@ def _edge_items(edge, route, chart, sizes, lay, style, spot=None) -> tuple:
                           *points[1])
     points[-1] = _boundary(dst_shape, points[-1][0], points[-1][1], dw, dh,
                            *points[-2])
+    # The heads take their angle from the curve, not the route behind it.
+    points = _rounded(points, (edge.src, edge.dst), lay.pos, sizes)
     tip, tail = points[-1], points[-2]
     back_tip, back_tail = points[0], points[1]
     items: List[object] = []
@@ -1264,13 +1407,15 @@ def _class_scene(dia: MM.ClassDiagram, style: Style) -> Optional[Scene]:
     for k, (rel, route) in enumerate(zip(dia.relations, lay.routes)):
         if len(route) < 2 or rel.left == rel.right:
             continue
-        points = list(route)
+        points = _simplify(list(route), (rel.left, rel.right), lay.pos,
+                           sizes, style.size * 1.4, (lay.captions.get(k),))
         lw, lh = sizes[rel.left]
         rw, rh = sizes[rel.right]
         points[0] = _boundary("rect", points[0][0], points[0][1], lw, lh,
                               *points[1])
         points[-1] = _boundary("rect", points[-1][0], points[-1][1], rw, rh,
                                *points[-2])
+        points = _rounded(points, (rel.left, rel.right), lay.pos, sizes)
         drawn = list(points)
         if rel.right_head:
             drawn[-1] = _shorten(*points[-2], *points[-1],
