@@ -2,6 +2,7 @@
 
     python -m mdedit                  open the editor
     python -m mdedit notes.md         open the editor on a file
+    python -m mdedit graph.mermaid    a bare diagram file, drawn
     python -m mdedit --export notes.md [out.html]
     python -m mdedit --outline notes.md
 
@@ -62,7 +63,8 @@ def main(argv=None) -> int:
         prog="mdedit",
         description="Edit and render Markdown. Pure Python, entirely offline.",
     )
-    ap.add_argument("file", nargs="?", help="Markdown file to open")
+    ap.add_argument("file", nargs="?",
+                    help="Markdown or .mermaid file to open")
     ap.add_argument("output", nargs="?", help="output path for --export")
     ap.add_argument("--export", action="store_true",
                     help="write standalone HTML instead of opening the editor")
@@ -100,7 +102,10 @@ def main(argv=None) -> int:
         if not os.path.isfile(args.file):
             print(f"mdedit: no such file: {args.file}", file=sys.stderr)
             return 1
-        doc = P.parse(_read(args.file), opts)
+        text = _read(args.file)
+        if P.is_diagram_file(args.file):
+            text = P.as_diagram(text)
+        doc = P.parse(text, opts)
 
         if args.outline:
             for level, title in P.outline(doc):

@@ -900,6 +900,59 @@ class TestMermaid(unittest.TestCase):
         self.assertEqual(page.count("http"), 2)     # the two svg namespaces
 
 
+class TestDiagramFiles(unittest.TestCase):
+    """A ``.mermaid`` file is one diagram, with no fence around it."""
+
+    SOURCE = "flowchart TD" + chr(10) + "  A[Start] --> B[End]" + chr(10)
+
+    def test_the_suffix_is_recognised(self):
+        for name in ("graph.mermaid", "GRAPH.MERMAID",
+                     "a/b/c.Mermaid", ".mermaid"):
+            self.assertTrue(P.is_diagram_file(name), name)
+
+    def test_other_names_are_markdown(self):
+        for name in ("notes.md", "mermaid.md", "graph.mermaid.md",
+                     "graph.mmd", "graph", "graph.txt"):
+            self.assertFalse(P.is_diagram_file(name), name)
+
+    def test_bare_source_parses_as_a_diagram(self):
+        node = P.parse(P.as_diagram(self.SOURCE)).children[0]
+        self.assertIsInstance(node, P.Diagram)
+        self.assertEqual(node.kind, "flowchart")
+
+    def test_blank_lines_around_it_do_not_matter(self):
+        padded = chr(10) * 2 + self.SOURCE + chr(10) * 3
+        node = P.parse(P.as_diagram(padded)).children[0]
+        self.assertIsInstance(node, P.Diagram)
+
+    def test_without_the_fence_it_is_only_text(self):
+        # What the file holds is not Markdown, which is the whole reason
+        # the fence has to be put back before parsing.
+        node = P.parse(self.SOURCE).children[0]
+        self.assertNotIsInstance(node, P.Diagram)
+
+    def test_a_diagram_file_exports_as_svg(self):
+        import shutil
+        import tempfile
+
+        folder = tempfile.mkdtemp()
+        try:
+            src = os.path.join(folder, "graph.mermaid")
+            out = os.path.join(folder, "graph.html")
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(self.SOURCE)
+            from mdedit import cli
+            import contextlib
+            import io as _io
+            with contextlib.redirect_stdout(_io.StringIO()):
+                self.assertEqual(cli.main(["--export", src, out]), 0)
+            with open(out, encoding="utf-8") as fh:
+                page = fh.read()
+            self.assertIn("<svg", page)
+            self.assertNotIn("<pre>", page)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
 class TestRobustness(unittest.TestCase):
     def test_empty_document(self):
         self.assertEqual(P.parse("").children, [])

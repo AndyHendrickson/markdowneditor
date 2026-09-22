@@ -174,6 +174,10 @@ SVG. Both come from one layout pass, so the page and the preview are the
 same drawing twice. There is no mermaid.js and no renderer to download: the
 dialect is read, laid out and painted here, with the standard library.
 
+A `.mermaid` file is opened as one diagram and nothing else: the editor
+holds the bare source, the way mermaid's own tools write it, and adds the
+fence only to render it. Saving writes the bare source out again.
+
 Three diagram types are understood.
 
 - **Flowcharts** — `flowchart` or `graph`, in `TD`/`TB`, `LR`, `BT` or `RL`.
@@ -246,14 +250,15 @@ reader's colour scheme.
 ## Command line
 
 ```
-python mdedit.py                          open the editor
-python mdedit.py notes.md                 open the editor on a file
+python mdedit.py                              open the editor
+python mdedit.py notes.md                     open the editor on a file
+python mdedit.py graph.mermaid                a bare diagram file, drawn
 python mdedit.py notes.md --flavor obsidian   open in an emulation mode
-python mdedit.py notes.md --no-tables     open with a feature switched off
+python mdedit.py notes.md --no-tables         open with a feature switched off
 python -m mdedit --export notes.md [out.html] [--flavor hugo]
-python -m mdedit --outline notes.md       print the heading outline
-python -m mdedit --list-flavors           show the emulation modes
-python -m mdedit --list-features          show the feature flags
+python -m mdedit --outline notes.md           print the heading outline
+python -m mdedit --list-flavors               show the emulation modes
+python -m mdedit --list-features              show the feature flags
 ```
 
 ## Keys

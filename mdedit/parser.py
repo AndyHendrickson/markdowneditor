@@ -372,6 +372,25 @@ _QUOTE_LABEL_RE = re.compile(
 )
 
 
+#: Files whose whole contents are one diagram, with no fence around them.
+DIAGRAM_SUFFIXES = (".mermaid",)
+
+
+def is_diagram_file(name: str) -> bool:
+    """Is this the name of a file holding a diagram and nothing else?"""
+    return name.lower().endswith(DIAGRAM_SUFFIXES)
+
+
+def as_diagram(source: str) -> str:
+    """Bare diagram source with its fence put back, ready for :func:`parse`.
+
+    A ``.mermaid`` file holds the diagram the way mermaid's own tools want
+    it -- unfenced -- so the editor keeps it that way and the fence is added
+    here, for the parser alone.  What gets saved is still the bare source.
+    """
+    return "```mermaid\n" + source.strip("\n") + "\n```\n"
+
+
 def parse(source: str, opts: Options = DEFAULT) -> Document:
     """Parse Markdown *source* into a :class:`Document`."""
     text = source.replace("\r\n", "\n").replace("\r", "\n").expandtabs(4)

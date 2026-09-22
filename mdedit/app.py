@@ -23,6 +23,7 @@ MOD = "Command" if IS_MAC else "Control"
 PREFS_PATH = os.path.join(os.path.expanduser("~"), ".mdedit.json")
 FILETYPES = [
     ("Markdown", "*.md *.markdown *.mdown *.mkd *.mdtxt *.text"),
+    ("Mermaid diagrams", "*.mermaid"),
     ("Text files", "*.txt"),
     ("All files", "*.*"),
 ]
@@ -988,6 +989,13 @@ class MarkdownApp(tk.Tk):
     def source(self) -> str:
         return self.editor.get("1.0", "end-1c")
 
+    def document(self) -> str:
+        """What to render: a ``.mermaid`` buffer gets its fence put back."""
+        text = self.source()
+        if self.path and P.is_diagram_file(self.path):
+            return P.as_diagram(text)
+        return text
+
     def set_dirty(self, dirty: bool):
         self.dirty = dirty
         name = os.path.basename(self.path) if self.path else "Untitled"
@@ -1036,7 +1044,7 @@ class MarkdownApp(tk.Tk):
             top = self.preview.yview()[0]
         except tk.TclError:
             top = 0.0
-        doc = P.parse(source, self.opts())
+        doc = P.parse(self.document(), self.opts())
         base_dir = os.path.dirname(self.path) if self.path else os.getcwd()
         self.preview.configure(state="normal")
         outer, self._syncing = self._syncing, True
@@ -1245,7 +1253,7 @@ class MarkdownApp(tk.Tk):
         )
         if not path:
             return
-        doc = P.parse(self.source(), self.opts())
+        doc = P.parse(self.document(), self.opts())
         title = os.path.splitext(os.path.basename(path))[0]
         try:
             with open(path, "w", encoding="utf-8") as fh:

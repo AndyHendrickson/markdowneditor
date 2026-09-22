@@ -6,7 +6,9 @@ tests
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -345,6 +347,58 @@ class TestScrollSync(unittest.TestCase):
             app.editor.yview("moveto", 0.90)
             app.update()
             self.assertEqual(app.preview.index("@0,0"), top)
+        finally:
+            app.destroy()
+
+@unittest.skipIf(tk is None, globals().get("_WHY", "no tkinter"))
+class TestDiagramFiles(unittest.TestCase):
+    """Opening a ``.mermaid`` file draws it; saving leaves it bare."""
+
+    SOURCE = "flowchart LR\n    A[Ingest] --> B[Parse] --> C[Store]\n"
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "graph.mermaid")
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write(self.SOURCE)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_it_opens_as_a_diagram(self):
+        app = MarkdownApp(self.path)
+        try:
+            app.update()
+            app.render_now()
+            app.update()
+            self.assertEqual(len(app.renderer._diagrams), 1)
+            # Drawn, not shown: the source is on a canvas, not in the text.
+            self.assertNotIn("flowchart", app.preview.get("1.0", "end"))
+        finally:
+            app.destroy()
+
+    def test_the_file_keeps_its_own_shape(self):
+        app = MarkdownApp(self.path)
+        try:
+            self.assertEqual(app.source().strip(), self.SOURCE.strip())
+            again = os.path.join(self.dir, "again.mermaid")
+            app._write(again)
+            with open(again, encoding="utf-8") as fh:
+                self.assertNotIn("```", fh.read())
+        finally:
+            app.destroy()
+
+    def test_a_markdown_file_is_still_markdown(self):
+        notes = os.path.join(self.dir, "notes.md")
+        with open(notes, "w", encoding="utf-8") as fh:
+            fh.write("# Title\n\n" + self.SOURCE)
+        app = MarkdownApp(notes)
+        try:
+            app.update()
+            app.render_now()
+            app.update()
+            self.assertEqual(app.renderer._diagrams, [])
+            self.assertIn("flowchart", app.preview.get("1.0", "end"))
         finally:
             app.destroy()
 
