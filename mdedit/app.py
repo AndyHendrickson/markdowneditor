@@ -1197,7 +1197,10 @@ class MarkdownApp(tk.Tk):
 
     def open_path(self, path: str):
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            # utf-8-sig: a byte order mark is a Windows editor's habit,
+            # not content -- left in, it stops the first line parsing.
+            with open(path, "r", encoding="utf-8-sig",
+                      errors="replace") as fh:
                 text = fh.read()
         except OSError as exc:
             messagebox.showerror("Could not open", str(exc), parent=self)

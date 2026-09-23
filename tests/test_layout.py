@@ -388,6 +388,46 @@ class TestDiagramFiles(unittest.TestCase):
         finally:
             app.destroy()
 
+    def test_a_byte_order_mark_is_not_content(self):
+        marked = os.path.join(self.dir, "marked.mermaid")
+        with open(marked, "w", encoding="utf-8-sig") as fh:
+            fh.write(self.SOURCE)
+        app = MarkdownApp(marked)
+        try:
+            app.update()
+            app.render_now()
+            app.update()
+            self.assertEqual(len(app.renderer._diagrams), 1)
+            self.assertTrue(app.source().startswith("flowchart"))
+        finally:
+            app.destroy()
+
+    def test_a_front_matter_prelude_still_draws(self):
+        titled = os.path.join(self.dir, "titled.mermaid")
+        with open(titled, "w", encoding="utf-8") as fh:
+            fh.write("---\ntitle: Pipeline\n---\n" + self.SOURCE)
+        app = MarkdownApp(titled)
+        try:
+            app.update()
+            app.render_now()
+            app.update()
+            self.assertEqual(len(app.renderer._diagrams), 1)
+        finally:
+            app.destroy()
+    def test_a_real_file_opens_as_a_picture(self):
+        # The whole path, on the fixture the editor was reported failing
+        # on: read the file, fence it, parse it, lay it out, draw it.
+        here = os.path.dirname(os.path.abspath(__file__))
+        app = MarkdownApp(os.path.join(here, "Seq.mermaid"))
+        try:
+            app.update()
+            app.render_now()
+            app.update()
+            self.assertEqual(len(app.renderer._diagrams), 1)
+            self.assertNotIn("sequenceDiagram",
+                             app.preview.get("1.0", "end"))
+        finally:
+            app.destroy()
     def test_a_markdown_file_is_still_markdown(self):
         notes = os.path.join(self.dir, "notes.md")
         with open(notes, "w", encoding="utf-8") as fh:

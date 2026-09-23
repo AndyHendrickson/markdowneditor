@@ -178,7 +178,7 @@ _HASH_ENTITY_RE = re.compile(r"#(\w{2,8}|\d{1,6}|x[0-9a-fA-F]{1,6});")
 
 def parse(source: str):
     """Parse mermaid *source*, or return ``None`` if it isn't understood."""
-    lines = _clean_lines(source)
+    lines = _skip_front_matter(_clean_lines(source))
     if not lines:
         return None
     m = _HEADER_RE.match(lines[0])
@@ -197,6 +197,22 @@ def parse(source: str):
         # A malformed diagram falls back to being shown as source, which is
         # more use than half a picture.
         return None
+
+
+def _skip_front_matter(lines: List[str]) -> List[str]:
+    """Step over mermaid's ``---`` prelude, if the source opens with one.
+
+    Mermaid takes a YAML block of its own ahead of the diagram, carrying a
+    title and display config.  None of it changes the shape of what is
+    drawn, so it is skipped.  An unclosed ``---`` is left where it is: it
+    is then not a prelude, and the header line below decides the matter.
+    """
+    if not lines or lines[0].strip() != "---":
+        return lines
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() in ("---", "..."):
+            return lines[i + 1:]
+    return lines
 
 
 def _clean_lines(source: str) -> List[str]:

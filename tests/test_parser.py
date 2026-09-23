@@ -852,6 +852,28 @@ class TestMermaid(unittest.TestCase):
         self.assertEqual(node.kind, "flowchart")
         self.assertIn("flowchart TD", node.source)
 
+    def test_a_front_matter_prelude_is_skipped(self):
+        # Mermaid takes a YAML block of its own before the diagram.
+        src = ("```mermaid\n---\ntitle: Pipeline\n---\n"
+               "flowchart TD\n  A[Start] --> B[End]\n```\n")
+        node = P.parse(src).children[0]
+        self.assertIsInstance(node, P.Diagram)
+        self.assertEqual(node.kind, "flowchart")
+
+    def test_a_prelude_may_close_with_dots(self):
+        src = ("```mermaid\n---\nconfig:\n  theme: dark\n...\n"
+               "flowchart TD\n  A --> B\n```\n")
+        self.assertIsInstance(P.parse(src).children[0], P.Diagram)
+
+    def test_an_unclosed_prelude_is_left_alone(self):
+        # Not a prelude, then -- and without a header line it is not a
+        # diagram either, so the source stands.
+        src = "```mermaid\n---\ntitle: Pipeline\n```\n"
+        self.assertIsInstance(P.parse(src).children[0], P.CodeBlock)
+
+    def test_a_prelude_and_nothing_else_is_not_a_diagram(self):
+        src = "```mermaid\n---\ntitle: Empty\n---\n```\n"
+        self.assertIsInstance(P.parse(src).children[0], P.CodeBlock)
     def test_unreadable_diagram_stays_a_code_block(self):
         node = P.parse("```mermaid\ngantt\n  title Roadmap\n```\n").children[0]
         self.assertIsInstance(node, P.CodeBlock)
@@ -931,6 +953,27 @@ class TestDiagramFiles(unittest.TestCase):
         node = P.parse(self.SOURCE).children[0]
         self.assertNotIsInstance(node, P.Diagram)
 
+    def test_a_byte_order_mark_does_not_hide_the_diagram(self):
+        import contextlib
+        import io as _io
+        import shutil
+        import tempfile
+
+        folder = tempfile.mkdtemp()
+        try:
+            src = os.path.join(folder, "graph.mermaid")
+            out = os.path.join(folder, "graph.html")
+            # What a Windows editor leaves at the front of a file.
+            with open(src, "w", encoding="utf-8-sig") as fh:
+                fh.write(self.SOURCE)
+            from mdedit import cli
+            with contextlib.redirect_stdout(_io.StringIO()):
+                self.assertEqual(cli.main(["--export", src, out]), 0)
+            with open(out, encoding="utf-8") as fh:
+                page = fh.read()
+            self.assertIn("<svg", page)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
     def test_a_diagram_file_exports_as_svg(self):
         import shutil
         import tempfile

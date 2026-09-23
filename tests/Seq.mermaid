@@ -1,0 +1,104 @@
+sequenceDiagram
+    autonumber
+    participant AppKit as NSApplication / AppKit
+    participant App as AppDelegate
+    participant Host as AppServiceHost
+    participant Service as PersistentStoreService
+    participant Store as PersistentxxxLicenseStore
+    participant Handle as StoreHandle
+    participant Coordinator as xxxGameBootCoordinator
+    participant Client as xxxClient
+    participant Lifetime as xxxNativeLifetime
+    participant API as MstClientAPI.cpp / xxx.h
+    participant Library as libScexxx.a
+    participant Disk as App sandbox JSON file
+    participant RN as React Native surface
+
+    Note over AppKit,RN: Application launch and native service setup
+    AppKit->>App: applicationDidFinishLaunching(notification)
+    App->>App: configureAppServicesForLaunch()
+    App->>Host: bootstrap()
+    Host-->>App: AppServiceHost
+    App->>App: configureReactNativeFactory()
+    App->>App: runxxxTestGameBoot(using: host)
+
+    Note over App,Library: Mst client construction and process initialization
+    App->>Client: init()
+    Client->>API: sceNpMstInitialize(params)<br/>structSize + apiVersion
+    API->>API: Validate version and singleton state
+    API-->>Client: SCE_NP_Mst_OK
+    Client->>Lifetime: init()
+    Client-->>App: xxxClient
+
+    App->>Store: init(host.persistentStoreService)
+    Store->>Service: open("xxx-license-cache", excludeFromBackup: true)
+    Service-->>Store: StoreHandle
+    Store-->>App: PersistentxxxLicenseStore
+    App->>Coordinator: init(client, licenseStore)
+    Coordinator-->>App: xxxGameBootCoordinator
+
+    Note over App,Library: Game boot and license check
+    App->>Coordinator: bootGame(resourceIdentifier,<br/>authToken, deviceToken)
+    Coordinator->>Coordinator: Reject empty identifier or token buffers
+    Coordinator->>Store: license(for: resourceIdentifier)
+    Store->>Handle: get("licenses", defaultValue: [:])
+    opt StoreHandle cache has not been loaded
+        Handle->>Disk: Read xxx-license-cache.json
+        Disk-->>Handle: Decoded JSON or missing file
+    end
+    Handle-->>Store: License dictionary
+    Store-->>Coordinator: Existing record or nil
+
+    Coordinator->>Client: bootGame(resourceIdentifier,<br/>authToken, deviceToken)
+    Client->>Client: Validate identifier and non-empty tokens
+    Client->>API: sceNpMstIsUserEntitled(<br/>auth bytes, device bytes)
+    API->>API: Validate initialized state<br/>and borrowed byte ranges
+    Note over API,Library: Placeholder platform decision is allowed;<br/>libScexxx.a remains linked for Mst xxx primitives
+    API-->>Client: true
+    Client-->>Coordinator: entitled
+
+    alt User is not entitled
+        Coordinator-->>App: throw licenseDenied
+    else User is entitled
+        Coordinator->>Coordinator: validationDate = now()
+        alt Existing record found
+            Coordinator->>Coordinator: Preserve issuedAt;<br/>update lastValidatedAt
+        else No record found
+            Coordinator->>Coordinator: Set issuedAt and lastValidatedAt
+        end
+        Coordinator->>Store: save(xxxLocalLicense)
+        Store->>Handle: set("licenses", updated dictionary)
+        Handle->>Disk: Atomically write xxx-license-cache.json
+        Disk-->>Handle: Write completed
+        Coordinator-->>App: xxxGameBootResult(allowed,<br/>created or reused)
+        App->>App: Retain coordinator
+        App->>Host: Log allowed state and record disposition
+    end
+
+    alt Error reaches AppDelegate catch
+        App->>Host: Log sanitized xxx error
+        opt Client owns initialized lifetime
+            Client->>Lifetime: deinit / shutdown()
+            Lifetime->>API: sceNpMstTerminate()
+        end
+    end
+
+    Note over App,RN: Test app continues so the integration remains diagnosable
+    App->>App: makeMainWindow()
+    App->>RN: startReactNative(in: window, launchOptions)
+    RN-->>App: Surface started
+    App-->>AppKit: Launch completed
+
+    Note over AppKit,Library: Normal application termination
+    AppKit->>App: applicationWillTerminate(notification)
+    opt Retained coordinator exists
+        App->>Coordinator: shutdown()
+        Coordinator->>Client: shutdown()
+        Client->>Lifetime: shutdown()
+        Lifetime->>API: sceNpMstTerminate()
+        API->>API: Clear process-wide in-memory state
+        Lifetime-->>Client: return
+        Client-->>Coordinator: return
+        Coordinator-->>App: return
+    end
+    App->>Host: applicationShutdownCoordinator.shutdownIfNeeded(...)

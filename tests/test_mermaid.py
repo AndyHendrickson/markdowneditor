@@ -797,6 +797,47 @@ class TestSvg(unittest.TestCase):
         self.assertIn('xmlns="http://www.w3.org/2000/svg"', svg)
 
 
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "Seq.mermaid")
+
+
+class TestSequenceFixture(unittest.TestCase):
+    """A real ``.mermaid`` file, the size the editor is actually handed.
+
+    A source written for a test is a tidy one.  This is off a working
+    desk: thirteen participants, aliases with punctuation in them,
+    ``<br/>`` inside labels, and ``alt``/``opt`` blocks nested two deep.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(FIXTURE, encoding="utf-8-sig") as fh:
+            cls.source = fh.read()
+
+    def test_it_parses_as_a_sequence(self):
+        model = M.parse(self.source)
+        self.assertIsNotNone(model, "the file did not parse")
+        self.assertEqual(model.kind, "sequence")
+        self.assertTrue(model.autonumber)
+        self.assertEqual(len(model.participants), 13)
+
+    def test_an_alias_keeps_its_punctuation(self):
+        model = M.parse(self.source)
+        self.assertEqual(model.participants["API"].label,
+                         "MistelleClientAPI.cpp / drm.h")
+
+    def test_the_blocks_come_through_in_order(self):
+        model = M.parse(self.source)
+        kinds = [e.kind for e in model.events if isinstance(e, M.Block)]
+        self.assertEqual(kinds, ["opt", "alt", "alt", "opt"])
+
+    def test_it_lays_out(self):
+        sc = scene(self.source)
+        self.assertIsNotNone(sc)
+        self.assertGreater(sc.width, 0)
+        self.assertGreater(sc.height, 0)
+        self.assertGreater(len(sc.items), 100)
+
 class TestRobustness(unittest.TestCase):
     def test_odd_input_does_not_raise(self):
         for src in ("flowchart TD\n" + "A --> " * 200 + "B\n",

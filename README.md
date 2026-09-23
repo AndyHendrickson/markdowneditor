@@ -178,6 +178,11 @@ A `.mermaid` file is opened as one diagram and nothing else: the editor
 holds the bare source, the way mermaid's own tools write it, and adds the
 fence only to render it. Saving writes the bare source out again.
 
+Mermaid's own `---` front matter is stepped over wherever it appears, in
+a file or in a fence; the title it carries is not drawn. A byte order
+mark at the start of a file is dropped on reading rather than taken for
+content.
+
 Three diagram types are understood.
 
 - **Flowcharts** — `flowchart` or `graph`, in `TD`/`TB`, `LR`, `BT` or `RL`.

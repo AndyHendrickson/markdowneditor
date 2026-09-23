@@ -20,7 +20,9 @@ from . import __version__, flavors, html_export, parser as P
 
 
 def _read(path: str) -> str:
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    # utf-8-sig drops a byte order mark, which is not content: left in,
+    # it stops the first line of the file parsing as anything.
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
         return fh.read()
 
 
